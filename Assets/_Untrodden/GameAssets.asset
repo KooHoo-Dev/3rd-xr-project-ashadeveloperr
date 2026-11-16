@@ -1,0 +1,424 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 355c0efc6ff79e0499357a3819a49795, type: 3}
+  m_Name: GameAssets
+  m_EditorClassIdentifier: Assembly-CSharp::Untrodden.GameAssets
+  snowGround: {fileID: 2100000, guid: 17b72c0455af3d94fbda78659f5ef4f8, type: 2}
+  water: {fileID: 2100000, guid: d9c39997206394740b317126e3a273bb, type: 2}
+  sea: {fileID: 2100000, guid: ecb1ce1a9264efe4492d32ce9e867565, type: 2}
+  trunk: {fileID: 2100000, guid: 25349c1246ce4d848840de9b18471798, type: 2}
+  pine: {fileID: 2100000, guid: 8c927da84a9a2894a9b3bd4b8cc9c34d, type: 2}
+  rock: {fileID: 2100000, guid: 95a93df5ca7b7f14fb2f32a85eb18f26, type: 2}
+  wall: {fileID: 2100000, guid: 2ed971a110cf6c542b77041fce5a155e, type: 2}
+  roof: {fileID: 2100000, guid: 588ac2a912baddd41a19139f1989a7d2, type: 2}
+  windowGlow: {fileID: 2100000, guid: a78e78fb979c401488d51d5bd8c12da7, type: 2}
+  wood: {fileID: 2100000, guid: fbb1f0781e0ac8446890feab926195c4, type: 2}
+  fish: {fileID: 2100000, guid: 6e00f7509bb2880478a541ac2de06c3b, type: 2}
+  can: {fileID: 2100000, guid: cb5b4688ba6cddb49b79e85cd68e367c, type: 2}
+  metal: {fileID: 2100000, guid: 047a21b42ae36924f9cb9716d4a6188a, type: 2}
+  darkMetal: {fileID: 2100000, guid: e03eea71783ba834aa4fa7d5d7d82d5b, type: 2}
+  brass: {fileID: 2100000, guid: 7dcaa09af6dccc44db6c56ebb0e07539, type: 2}
+  ammoBox: {fileID: 2100000, guid: 48e8ba49c2a849645bd453f9795f376c, type: 2}
+  compassFace: {fileID: 2100000, guid: 20c42974096849147b74d22740b1b00c, type: 2}
+  needle: {fileID: 2100000, guid: 722cad9b025f1d14d80ce0cc4a010437, type: 2}
+  ash: {fileID: 2100000, guid: e4507631a616ac1498d0d3c3d7b3fdec, type: 2}
+  bearFur: {fileID: 2100000, guid: 68a1b4ef2a1dd744e995399f84edb21c, type: 2}
+  bearDark: {fileID: 2100000, guid: ff9dd1cf478cd254e850a00997add3d4, type: 2}
+  snowflake: {fileID: 2100000, guid: 7d4a9daa880b646478d9d3bf3a13bbb2, type: 2}
+  fireParticle: {fileID: 2100000, guid: e09c418a230060540bab97be61ebb514, type: 2}
+  overlay: {fileID: 2100000, guid: 8ea12280aaf017543bb38af5df49c45b, type: 2}
+  handful: {fileID: 2100000, guid: 73e473c0b05757b4aa36a29cf31e2948, type: 2}
+  softDot: {fileID: 2800000, guid: 0056f740fa65cab409686c75ce98d235, type: 3}
+  packMaterial: {fileID: 2100000, guid: e1985241d80c91b4283007354892d496, type: 2}
+  trees:
+  - name: Tree_pine_A_snow
+    meshes:
+    - {fileID: 2116525786859772545, guid: 9307d388e63bc5d44b7f9d7eb9ee99ac, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -2.141305, y: -0.24310589, z: -2.4111538}
+    boundsMax: {x: 2.1413064, y: 8.527811, z: 2.4111528}
+  - name: Tree_pine_B_snow
+    meshes:
+    - {fileID: 8994016611515195364, guid: 81b14fec9b9a18f4986e46628a786071, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -2.1413095, y: -0.24310565, z: -2.4111538}
+    boundsMax: {x: 2.141311, y: 7.8197155, z: 2.4111528}
+  - name: Tree_pine_C_snow
+    meshes:
+    - {fileID: 1547540831596313280, guid: 59b4e945096e3e84c9e837ba9fd0aedf, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -2.2482903, y: -0.24310589, z: -2.4111538}
+    boundsMax: {x: 2.3270342, y: 8.06925, z: 2.4111528}
+  rocks:
+  - name: Rock_A_Snow
+    meshes:
+    - {fileID: 134370941328487538, guid: bd115e552303a524ab1854d5b29d8ab2, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.37701762, y: -0.061955452, z: -0.31539673}
+    boundsMax: {x: 0.4211477, y: 0.58310586, z: 0.31443316}
+  - name: Rock_B_Snow
+    meshes:
+    - {fileID: -8993087967837844092, guid: 26a60367330350e4e86cf84d16a916be, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.4168361, y: -0.07536656, z: -0.39893758}
+    boundsMax: {x: 0.43178728, y: 0.5240567, z: 0.48168147}
+  - name: Rock_C_Snow
+    meshes:
+    - {fileID: -4496344337296497431, guid: 34fe92a119635564b80121eb2c5dab88, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.4831081, y: -0.06058681, z: -0.36693954}
+    boundsMax: {x: 0.5075391, y: 0.38704497, z: 0.38084185}
+  - name: Flat_Rock_A_Snow
+    meshes:
+    - {fileID: -6540637509835331814, guid: 6d2e39d3102b4a041aaa92820fc9d4eb, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.25927147, y: -0.030944064, z: -0.21112233}
+    boundsMax: {x: 0.2816088, y: 0.13567722, z: 0.21130255}
+  - name: Flat_Rock_B_Snow
+    meshes:
+    - {fileID: 7290976463348148570, guid: 1666f35c69522d04db995e91e29101f3, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.143828, y: -0.02358133, z: -0.14687079}
+    boundsMax: {x: 0.15832955, y: 0.13263595, z: 0.16091102}
+  - name: Flat_Rock_C_Snow
+    meshes:
+    - {fileID: 7854433959643557707, guid: 66796779e9d5e904fab7a6baba884407, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.1434148, y: -0.022953369, z: -0.10892905}
+    boundsMax: {x: 0.15066707, y: 0.0716853, z: 0.11305606}
+  props:
+  - name: Dead_Bush_A
+    meshes:
+    - {fileID: -5266662165737291207, guid: e865183568ad56c4caa855f5573b5ba5, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.5148133, y: -0.061386585, z: -0.2228304}
+    boundsMax: {x: 0.09510386, y: 0.8814693, z: 0.3039788}
+  - name: Dead_Bush_B
+    meshes:
+    - {fileID: 3067362553412658868, guid: 070457f5c60a7774ab696e5169318406, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.5781143, y: -0.07195628, z: -0.3191122}
+    boundsMax: {x: 0.07942408, y: 0.752132, z: 0.13951668}
+  - name: Dead_Bush_C
+    meshes:
+    - {fileID: -2767014994216993707, guid: cca07f4bb7dc0804093f2719018e0562, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.28241348, y: -0.0887351, z: -0.10884416}
+    boundsMax: {x: 0.2680223, y: 0.6472057, z: 0.25095263}
+  - name: Snow_mound_A
+    meshes:
+    - {fileID: 6588116048731046207, guid: dafcf27c445551940be55a72b0e32d70, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -2.0240731, y: -0.078210056, z: -1.9739137}
+    boundsMax: {x: 1.9472919, y: 0.5130533, z: 1.9901404}
+  - name: snow_mound_B
+    meshes:
+    - {fileID: 4222379230204417617, guid: fad1a162df97ef94d9c005092b1e280f, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -1.8305165, y: -0.0980863, z: -2.9383893}
+    boundsMax: {x: 1.6869558, y: 0.7360507, z: 2.920113}
+  - name: snow_mound_C
+    meshes:
+    - {fileID: -3921009299824558796, guid: e325d3a7cb3aad24fb5bbeb3a1cd886e, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -2.1594062, y: -0.10880834, z: -2.5885897}
+    boundsMax: {x: 2.8630605, y: 0.70334035, z: 2.2607183}
+  - name: TreeStump_Snow
+    meshes:
+    - {fileID: -3145227244340244606, guid: d07084c0d29b12943ae178af32a778d9, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.57990116, y: -0.029559314, z: -0.64666104}
+    boundsMax: {x: 0.35921723, y: 0.47992545, z: 0.46744764}
+  firewood:
+    name: Chopped_Log
+    meshes:
+    - {fileID: -2758987260688274246, guid: 968d9a6857b9eff47a3c6666b2acce19, type: 3}
+    parts:
+    - e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    boundsMin: {x: -0.18934178, y: -0.029118985, z: -0.18934187}
+    boundsMax: {x: 0.18934175, y: 0.4429312, z: 0.18934175}
+  cabinPrefab: {fileID: 4036752272137299544, guid: 65bef2f8496844d439000a0ca4049ba9, type: 3}
+  cabinSize: {x: 13.791029, y: 7.2817755, z: 9.861214}
+  campfirePrefab: {fileID: 8113842088601596, guid: dbdc94e7eaa3eb44493ddb67e191a0a3, type: 3}
+  font: {fileID: 11400000, guid: 29e28123920a96c44a8416a41c2da4d9, type: 2}
+  creatorName: ashadeveloperr

@@ -130,3 +130,6 @@ desktop.ini
 /[Aa]ssets/UModelerX-Hub/
 /[Aa]ssets/UModelerX-Hub.meta
 /UModelerXPackages/
+
+# headless screenshot review output
+/Captures/
