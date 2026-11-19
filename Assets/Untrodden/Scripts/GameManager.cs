@@ -108,6 +108,13 @@ namespace Untrodden
             Say("추위에 쓰러졌어요. 마지막 모닥불에서 다시 시작합니다.");
         }
 
+        /// <summary>쓰러진 게 아니라 길을 잃었을 때: 리스폰 횟수는 세지 않고 마지막 체크포인트로 옮긴다.</summary>
+        public void ReturnToCheckpoint(string message)
+        {
+            Teleport(Checkpoint != null ? Checkpoint : startPoint);
+            Say(message);
+        }
+
         public void Say(string message) => Notice?.Invoke(message);
 
         void Finish()

@@ -39,6 +39,8 @@ namespace Untrodden.EditorTools
         const float SizeX = 240f, SizeZ = 440f, TerrainBase = -10f, TerrainHeight = 80f;
         const float SeaZ = 402f, SeaLevel = 0.4f;
         const int HeightRes = 513, AlphaRes = 256;
+        // 플레이어가 다닐 수 있는 영역: 양옆·남쪽 벽 비탈과 바다를 뺀 안쪽
+        static readonly Vector2 PlayMin = new(30f, 16f), PlayMax = new(SizeX - 30f, SeaZ + 1f);
 
         static readonly Color FogColor = new(0.72f, 0.78f, 0.85f);
 
@@ -82,6 +84,7 @@ namespace Untrodden.EditorTools
 
             var env = new GameObject("Environment").transform;
             BuildWater(env);
+            BuildBoundary(env);
             BuildForest(env, start, fires, village);
             var shelters = BuildShelters(env);
             BuildMushrooms(env);
@@ -214,8 +217,10 @@ namespace Untrodden.EditorTools
             var rp = GraphicsSettings.defaultRenderPipeline;
             if (rp != null && rp.defaultTerrainMaterial != null) s_Terrain.materialTemplate = rp.defaultTerrainMaterial;
 
-            var area = go.AddComponent<TeleportationArea>();
+            var area = go.AddComponent<PlayAreaTeleportationArea>();
             area.interactionLayers = InteractionLayerMask.GetMask("Teleport");
+            area.filterSelectionByHitNormal = true; // 절벽·벽 비탈에는 순간이동 불가
+            area.upNormalToleranceDegrees = 35f;
             GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
         }
 
@@ -279,11 +284,27 @@ namespace Untrodden.EditorTools
             CreateOrReplace(sea, GenDir + "/SeaMesh.asset");
             MeshObject("Sea", parent, sea, water);
 
-            // 바다로 걸어 들어가지 못하게 막는 벽
-            var wall = new GameObject("SeaWall");
-            wall.transform.SetParent(parent);
-            wall.transform.position = new Vector3(SizeX / 2f, 5f, SeaZ + 4f);
-            wall.AddComponent<BoxCollider>().size = new Vector3(SizeX, 20f, 1f);
+        }
+
+        /// <summary>플레이 영역 둘레의 보이지 않는 벽. 걸어서 못 나가고, 순간이동 레이도 여기서 막힌다.</summary>
+        static void BuildBoundary(Transform parent)
+        {
+            var root = new GameObject("PlayAreaBoundary").transform;
+            root.SetParent(parent);
+            var c = (PlayMin + PlayMax) / 2f;
+            var size = PlayMax - PlayMin;
+            const float y = 30f, h = 120f, t = 1f;
+            void Wall(string name, Vector3 pos, Vector3 sz)
+            {
+                var go = new GameObject(name);
+                go.transform.SetParent(root);
+                go.transform.position = pos;
+                go.AddComponent<BoxCollider>().size = sz;
+            }
+            Wall("South", new Vector3(c.x, y, PlayMin.y - t / 2f), new Vector3(size.x + 2f, h, t));
+            Wall("North", new Vector3(c.x, y, PlayMax.y + t / 2f), new Vector3(size.x + 2f, h, t));
+            Wall("West", new Vector3(PlayMin.x - t / 2f, y, c.y), new Vector3(t, h, size.y + 2f));
+            Wall("East", new Vector3(PlayMax.x + t / 2f, y, c.y), new Vector3(t, h, size.y + 2f));
         }
 
         // ───────────────────────── 숲·바위 ─────────────────────────
@@ -708,6 +729,10 @@ namespace Untrodden.EditorTools
             gm.goalPoint = goalPoint;
             gm.goalRadius = 10f;
             systems.AddComponent<PlayerVitals>();
+            var playArea = systems.AddComponent<PlayArea>();
+            playArea.min = PlayMin;
+            playArea.max = PlayMax;
+            systems.AddComponent<ReturnToCampfireInput>();
 
             // 눈보라: 머리 위를 따라다니는 눈 파티클 + 바람 소리
             var blizzard = systems.AddComponent<Blizzard>();
@@ -744,7 +769,7 @@ namespace Untrodden.EditorTools
             Text(title.transform, "Untrodden", 120, new Vector2(0, 230), new Vector2(950, 150), Color.white, FontStyles.Bold);
             Text(title.transform, "눈보라와 곰을 피해 얼어붙은 숲을 지나\n바닷가 마을까지 살아서 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
             Text(title.transform, $"제작  {CreatorName}", 32, new Vector2(0, 0), new Vector2(900, 50), new Color(1f, 0.8f, 0.5f));
-            Text(title.transform, "왼쪽 스틱 이동 · 오른쪽 스틱 회전 / 앞으로 밀어 순간이동\n그립 버튼으로 잡기 · 나침반 빨간 바늘이 북쪽(바다)", 26, new Vector2(0, -85), new Vector2(950, 90), new Color(0.75f, 0.8f, 0.88f));
+            Text(title.transform, "왼쪽 스틱 이동 · 오른쪽 스틱 회전 / 앞으로 밀어 순간이동\n그립 버튼으로 잡기 · 나침반 빨간 바늘이 북쪽(바다)\n갇히면 왼쪽 메뉴 버튼을 길게 눌러 모닥불로 복귀", 26, new Vector2(0, -95), new Vector2(950, 120), new Color(0.75f, 0.8f, 0.88f));
             var startBtn = Button(title.transform, "시작하기", new Vector2(0, -235));
             UnityEventTools.AddPersistentListener(startBtn.onClick, new UnityAction(gm.StartGame));
             gm.titleCanvas = title.gameObject;
