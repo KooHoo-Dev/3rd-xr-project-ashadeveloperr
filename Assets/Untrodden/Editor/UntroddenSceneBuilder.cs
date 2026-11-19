@@ -15,7 +15,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Comfort;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Movement;
-using UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion.Turning;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 namespace Untrodden.EditorTools
@@ -217,10 +217,6 @@ namespace Untrodden.EditorTools
             var rp = GraphicsSettings.defaultRenderPipeline;
             if (rp != null && rp.defaultTerrainMaterial != null) s_Terrain.materialTemplate = rp.defaultTerrainMaterial;
 
-            var area = go.AddComponent<PlayAreaTeleportationArea>();
-            area.interactionLayers = InteractionLayerMask.GetMask("Teleport");
-            area.filterSelectionByHitNormal = true; // 절벽·벽 비탈에는 순간이동 불가
-            area.upNormalToleranceDegrees = 35f;
             GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
         }
 
@@ -286,7 +282,7 @@ namespace Untrodden.EditorTools
 
         }
 
-        /// <summary>플레이 영역 둘레의 보이지 않는 벽. 걸어서 못 나가고, 순간이동 레이도 여기서 막힌다.</summary>
+        /// <summary>플레이 영역 둘레의 보이지 않는 벽. 걸어서 밖으로 나가지 못하게 막는다.</summary>
         static void BuildBoundary(Transform parent)
         {
             var root = new GameObject("PlayAreaBoundary").transform;
@@ -694,9 +690,13 @@ namespace Untrodden.EditorTools
             cam.farClipPlane = 80f;
             cam.nearClipPlane = 0.02f;
 
-            // 연속 이동 중에만 비네팅
+            // 이동 방식: 왼쪽 스틱 연속 이동 + 오른쪽 스틱 부드러운 회전. 순간이동은 쓰지 않는다.
+            ConfigureLocomotion(go);
+
+            // 이동·회전 중에만 비네팅
             var vigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(VignettePrefab);
             var move = go.GetComponentInChildren<ContinuousMoveProvider>(true);
+            var turn = go.GetComponentInChildren<ContinuousTurnProvider>(true);
             if (vigPrefab != null)
             {
                 var vig = (GameObject)PrefabUtility.InstantiatePrefab(vigPrefab, cam.transform);
@@ -707,10 +707,41 @@ namespace Untrodden.EditorTools
                 {
                     ctrl.locomotionVignetteProviders.Clear();
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = move, enabled = true });
+                    if (turn != null)
+                        ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = turn, enabled = true });
                     EditorUtility.SetDirty(ctrl);
                 }
             }
             return rig;
+        }
+
+        const float TurnSpeed = 50f; // 초당 회전 각도 (부드러운 회전)
+
+        static void ConfigureLocomotion(GameObject rigGo)
+        {
+            // 컨트롤러별 입력 관리자(Starter Assets): 순간이동 입력을 끊고, 회전은 스냅 대신 부드러운 회전
+            foreach (var mb in rigGo.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (mb == null || mb.GetType().Name != "ControllerInputActionManager") continue;
+                var so = new SerializedObject(mb);
+                so.FindProperty("m_TeleportMode").objectReferenceValue = null;
+                so.FindProperty("m_TeleportModeCancel").objectReferenceValue = null;
+                so.FindProperty("m_TeleportInteractor").objectReferenceValue = null;
+                so.FindProperty("m_SmoothTurnEnabled").boolValue = true;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            // 순간이동 인터랙터는 꺼 둔다(레이가 보이지 않도록)
+            foreach (var t in rigGo.GetComponentsInChildren<Transform>(true))
+                if (t.name == "Teleport Interactor") t.gameObject.SetActive(false);
+
+            var turn = rigGo.GetComponentInChildren<ContinuousTurnProvider>(true);
+            if (turn != null)
+            {
+                turn.turnSpeed = TurnSpeed;
+                EditorUtility.SetDirty(turn);
+            }
+            else Debug.LogWarning("[Untrodden] ContinuousTurnProvider not found on rig");
         }
 
         // ───────────────────────── 시스템·UI ─────────────────────────
@@ -769,7 +800,7 @@ namespace Untrodden.EditorTools
             Text(title.transform, "Untrodden", 120, new Vector2(0, 230), new Vector2(950, 150), Color.white, FontStyles.Bold);
             Text(title.transform, "눈보라와 곰을 피해 얼어붙은 숲을 지나\n바닷가 마을까지 살아서 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
             Text(title.transform, $"제작  {CreatorName}", 32, new Vector2(0, 0), new Vector2(900, 50), new Color(1f, 0.8f, 0.5f));
-            Text(title.transform, "왼쪽 스틱 이동 · 오른쪽 스틱 회전 / 앞으로 밀어 순간이동\n그립 버튼으로 잡기 · 나침반 빨간 바늘이 북쪽(바다)\n갇히면 왼쪽 메뉴 버튼을 길게 눌러 모닥불로 복귀", 26, new Vector2(0, -95), new Vector2(950, 120), new Color(0.75f, 0.8f, 0.88f));
+            Text(title.transform, "왼쪽 스틱으로 걷기 · 오른쪽 스틱으로 천천히 돌기\n그립 버튼으로 잡기 · 나침반 빨간 바늘이 북쪽(바다)\n갇히면 왼쪽 메뉴 버튼을 길게 눌러 모닥불로 복귀", 26, new Vector2(0, -95), new Vector2(950, 120), new Color(0.75f, 0.8f, 0.88f));
             var startBtn = Button(title.transform, "시작하기", new Vector2(0, -235));
             UnityEventTools.AddPersistentListener(startBtn.onClick, new UnityAction(gm.StartGame));
             gm.titleCanvas = title.gameObject;

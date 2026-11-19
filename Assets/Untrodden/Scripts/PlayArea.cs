@@ -5,7 +5,6 @@ namespace Untrodden
     /// <summary>
     /// 플레이어가 다닐 수 있는 영역(XZ 사각형)을 정의하고,
     /// 영역 밖으로 나가거나 지형 아래로 떨어지면 마지막 모닥불로 돌려보낸다.
-    /// 순간이동 허용 여부(<see cref="PlayAreaTeleportationArea"/>)도 이 영역을 기준으로 판단한다.
     /// </summary>
     public class PlayArea : MonoBehaviour
     {
