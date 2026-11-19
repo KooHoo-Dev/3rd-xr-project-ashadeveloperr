@@ -4,22 +4,26 @@ using UnityEngine.UI;
 
 namespace Untrodden
 {
-    /// <summary>왼손 손목 UI: 체력·체온·허기 막대, 경과 시간, 눈보라 예고, 알림 메시지.</summary>
+    /// <summary>
+    /// 왼손 손목 UI: 체력, 기록, 관문, 속도, 눈보라 예고, 나침반, 알림.
+    /// 나침반은 "지금 바라보는 방향 = 위쪽" 기준으로 북쪽(N)과 다음 목표(화살표)를 보여준다.
+    /// </summary>
     public class WristHUD : MonoBehaviour
     {
         public Image healthFill;
-        public Image warmthFill;
-        public Image foodFill;
         public TMP_Text timeText;
+        public TMP_Text gateText;
+        public TMP_Text speedText;
         public TMP_Text statusText;
         public TMP_Text noticeText;
         [Tooltip("시야 아래쪽에 잠깐 뜨는 알림(손목을 안 봐도 보이도록)")]
         public TMP_Text toastText;
+        public RectTransform compassNorth;
+        public RectTransform compassTarget;
         public AudioSource alertAudio;
-        public float noticeDuration = 5f;
+        public float noticeDuration = 4f;
 
         float m_NoticeTimer;
-        Blizzard.Phase m_LastPhase;
 
         void OnEnable()
         {
@@ -28,7 +32,6 @@ namespace Untrodden
 
         void Start()
         {
-            // GameManager.Awake가 먼저 실행되지만 OnEnable 순서를 보장하기 위해 한 번 더 연결
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.Notice -= OnNotice;
@@ -53,20 +56,26 @@ namespace Untrodden
 
         void Update()
         {
+            var gm = GameManager.Instance;
             var v = PlayerVitals.Instance;
-            if (v != null)
+            var course = CourseTracker.Instance;
+            var ski = SkiController.Instance;
+
+            if (healthFill && v != null) healthFill.fillAmount = Mathf.Clamp01(v.Health / v.maxHealth);
+
+            if (timeText && gm != null)
             {
-                Set(healthFill, v.Health / v.maxHealth);
-                Set(warmthFill, v.Warmth / v.maxWarmth);
-                Set(foodFill, v.Food / v.maxFood);
+                float t = gm.ElapsedTime;
+                int m = Mathf.FloorToInt(t / 60f);
+                string pen = course != null && course.Penalty > 0f ? $" <color=#FF8A7A>+{course.Penalty:0}</color>" : "";
+                timeText.text = $"{m}:{t - m * 60f:00.0}{pen}";
             }
 
-            var gm = GameManager.Instance;
-            if (gm != null && timeText)
-            {
-                int t = Mathf.FloorToInt(gm.ElapsedTime);
-                timeText.text = $"{t / 60:00}:{t % 60:00}";
-            }
+            if (gateText && course != null)
+                gateText.text = $"관문 {course.Passed + course.Missed}/{course.Total}";
+
+            if (speedText && ski != null)
+                speedText.text = $"{ski.Speed * 3.6f:0} km/h";
 
             if (statusText)
             {
@@ -79,15 +88,10 @@ namespace Untrodden
                     else if (b.CurrentPhase == Blizzard.Phase.Storm)
                         status = "<color=#9FD8FF>눈보라!</color>";
                 }
-                if (v != null)
-                {
-                    if (v.NearFire) status += (status.Length > 0 ? "  " : "") + "<color=#FF9A3C>모닥불</color>";
-                    else if (v.InShelter) status += (status.Length > 0 ? "  " : "") + "그늘";
-                    if (v.Warmth <= 0f) status += "  <color=#7FC8FF>얼어붙는 중</color>";
-                    if (v.Food <= 0f) status += "  <color=#E0C060>굶주림</color>";
-                }
                 statusText.text = status;
             }
+
+            UpdateCompass(gm, course);
 
             if (m_NoticeTimer > 0f)
             {
@@ -100,10 +104,27 @@ namespace Untrodden
             }
         }
 
-        static void Set(Image img, float t)
+        void UpdateCompass(GameManager gm, CourseTracker course)
         {
-            if (img == null) return;
-            img.fillAmount = Mathf.Clamp01(t);
+            if (gm == null || gm.Head == null) return;
+            var fwd = Vector3.ProjectOnPlane(gm.Head.forward, Vector3.up);
+            if (fwd.sqrMagnitude < 1e-4f) return;
+            fwd.Normalize();
+
+            if (compassNorth)
+                compassNorth.localRotation = Quaternion.Euler(0f, 0f, Vector3.SignedAngle(fwd, Vector3.forward, Vector3.up) * -1f);
+
+            if (compassTarget)
+            {
+                var target = course != null ? course.NextTarget() : null;
+                if (target.HasValue)
+                {
+                    var to = Vector3.ProjectOnPlane(target.Value - gm.Head.position, Vector3.up);
+                    compassTarget.gameObject.SetActive(true);
+                    compassTarget.localRotation = Quaternion.Euler(0f, 0f, Vector3.SignedAngle(fwd, to, Vector3.up) * -1f);
+                }
+                else compassTarget.gameObject.SetActive(false);
+            }
         }
     }
 }

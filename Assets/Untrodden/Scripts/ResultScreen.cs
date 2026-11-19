@@ -3,13 +3,13 @@ using UnityEngine;
 
 namespace Untrodden
 {
-    /// <summary>마을 도착 시 플레이어 앞에 나타나는 결과 화면.</summary>
+    /// <summary>결승선 통과 시 플레이어 앞에 나타나는 결과 화면.</summary>
     public class ResultScreen : MonoBehaviour
     {
         public TMP_Text statsText;
         public float distanceFromHead = 2f;
 
-        public void Show(float seconds, int respawns, float distance)
+        public void Show(float seconds, float penalty, int passed, int total, int crashes, int respawns)
         {
             var head = GameManager.Instance.Head;
             var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
@@ -17,13 +17,19 @@ namespace Untrodden
             transform.position = head.position + fwd * distanceFromHead;
             transform.rotation = Quaternion.LookRotation(fwd, Vector3.up);
 
-            int t = Mathf.FloorToInt(seconds);
             if (statsText)
                 statsText.text =
-                    $"걸린 시간   <b>{t / 60}분 {t % 60:00}초</b>\n" +
-                    $"다시 시작   <b>{respawns}회</b>\n" +
-                    $"이동 거리   <b>{distance:0}m</b>";
+                    $"최종 기록   <b><size=120%>{Format(seconds + penalty)}</size></b>\n" +
+                    $"<size=80%>주행 {Format(seconds)}  +  벌점 {penalty:0}초</size>\n" +
+                    $"통과한 관문   <b>{passed} / {total}</b>\n" +
+                    $"충돌 <b>{crashes}회</b>   ·   다시 출발 <b>{respawns}회</b>";
             gameObject.SetActive(true);
+        }
+
+        static string Format(float s)
+        {
+            int m = Mathf.FloorToInt(s / 60f);
+            return $"{m}:{s - m * 60f:00.0}";
         }
 
         // 버튼 OnClick에 연결

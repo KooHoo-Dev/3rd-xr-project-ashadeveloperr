@@ -4,7 +4,7 @@ namespace Untrodden
 {
     /// <summary>
     /// 추운 날씨의 입김. 몇 초마다 입 앞(시야 아래쪽)에 옅은 김을 내뿜는다.
-    /// 시야를 가리지 않도록 아래쪽에서 짧게만 보이게 한다. 체온이 낮을수록 숨이 가빠진다.
+    /// 시야를 가리지 않도록 아래쪽에서 짧게만 보이게 한다. 눈보라·속도에 따라 숨이 가빠진다.
     /// </summary>
     [RequireComponent(typeof(ParticleSystem))]
     public class BreathPuff : MonoBehaviour
@@ -33,8 +33,10 @@ namespace Untrodden
             m_Timer -= Time.deltaTime;
             if (m_Timer > 0f) return;
 
-            var v = PlayerVitals.Instance;
-            float cold = v != null ? 1f - Mathf.Clamp01(v.Warmth / v.maxWarmth) : 0f;
+            // 눈보라가 거세거나 빨리 달릴수록 숨이 가빠진다
+            float cold = Blizzard.Instance != null ? Blizzard.Instance.Intensity : 0f;
+            if (SkiController.Instance != null)
+                cold = Mathf.Max(cold, SkiController.Instance.Speed / SkiController.Instance.maxSpeed * 0.6f);
             m_Timer = Mathf.Lerp(Random.Range(interval.x, interval.y), coldInterval, cold);
 
             var fwd = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;

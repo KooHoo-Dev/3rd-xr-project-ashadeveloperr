@@ -12,10 +12,9 @@ namespace Untrodden
 
         public static Blizzard Instance { get; private set; }
 
-        public Vector2 calmDuration = new(70f, 110f);
-        public float warningDuration = 30f;
-        public float stormDuration = 40f;
-        public float stormColdMultiplier = 3.5f;
+        public Vector2 calmDuration = new(35f, 60f);
+        public float warningDuration = 20f;
+        public float stormDuration = 30f;
 
         [Header("Atmosphere")]
         public ParticleSystem snow;
@@ -36,7 +35,8 @@ namespace Untrodden
         public float PhaseTimeLeft { get; private set; }
         /// <summary>0 = 맑음, 1 = 최대 눈보라. 연출 보간에 쓴다.</summary>
         public float Intensity { get; private set; }
-        public float ColdMultiplier => Mathf.Lerp(1f, stormColdMultiplier, CurrentPhase == Phase.Storm ? Intensity : 0f);
+        /// <summary>눈보라 피해 강도(0~1). 눈보라 단계에서만 0보다 크다.</summary>
+        public float StormStrength => CurrentPhase == Phase.Storm ? Intensity : 0f;
 
         float m_SunBase;
 
@@ -75,12 +75,12 @@ namespace Untrodden
                 case Phase.Calm:
                     CurrentPhase = Phase.Warning;
                     PhaseTimeLeft = warningDuration;
-                    GameManager.Instance?.Say("바람이 거세져요. 30초 뒤 눈보라! 모닥불이나 바위 그늘을 찾으세요.");
+                    GameManager.Instance?.Say($"바람이 거세져요. {warningDuration:0}초 뒤 눈보라! 서둘러 내려가세요.");
                     break;
                 case Phase.Warning:
                     CurrentPhase = Phase.Storm;
                     PhaseTimeLeft = stormDuration;
-                    GameManager.Instance?.Say("눈보라가 몰아칩니다!");
+                    GameManager.Instance?.Say("눈보라가 몰아칩니다! 체력이 줄어요.");
                     break;
                 default:
                     CurrentPhase = Phase.Calm;

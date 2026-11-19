@@ -31,6 +31,8 @@ namespace Untrodden
 
         public event Action<GameState> StateChanged;
         public event Action<string> Notice;
+        /// <summary>리그가 순간 이동했을 때(리스폰·복귀). 위치 기반 판정 초기화용.</summary>
+        public event Action Teleported;
 
         Transform m_Head;
         Vector3 m_LastHeadPos;
@@ -86,7 +88,7 @@ namespace Untrodden
             DistanceWalked = 0f;
             m_LastHeadPos = m_Head.position;
             SetState(GameState.Playing);
-            Say("모닥불에 장작을 끼우고 파이어스틱을 부딪쳐 불을 붙이세요.");
+            Say("양손 폴을 눈에 대고 뒤로 밀어 출발하세요!");
         }
 
         public void Restart()
@@ -94,18 +96,18 @@ namespace Untrodden
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
-        public void SetCheckpoint(Transform point)
+        public void SetCheckpoint(Transform point, bool silent = false)
         {
             if (point == null || point == Checkpoint) return;
             Checkpoint = point;
-            Say("체크포인트 저장! 쓰러지면 여기서 다시 시작해요.");
+            if (!silent) Say("체크포인트 저장! 쓰러지면 여기서 다시 시작해요.");
         }
 
         public void Respawn()
         {
             RespawnCount++;
             Teleport(Checkpoint != null ? Checkpoint : startPoint);
-            Say("추위에 쓰러졌어요. 마지막 모닥불에서 다시 시작합니다.");
+            Say("쓰러졌어요. 마지막 모닥불에서 다시 출발합니다.");
         }
 
         /// <summary>쓰러진 게 아니라 길을 잃었을 때: 리스폰 횟수는 세지 않고 마지막 체크포인트로 옮긴다.</summary>
@@ -122,7 +124,14 @@ namespace Untrodden
             SetState(GameState.Result);
             if (resultScreen)
             {
-                resultScreen.Show(ElapsedTime, RespawnCount, DistanceWalked);
+                var course = CourseTracker.Instance;
+                var ski = SkiController.Instance;
+                resultScreen.Show(ElapsedTime,
+                    course != null ? course.Penalty : 0f,
+                    course != null ? course.Passed : 0,
+                    course != null ? course.Total : 0,
+                    ski != null ? ski.CrashCount : 0,
+                    RespawnCount);
             }
         }
 
@@ -148,6 +157,8 @@ namespace Untrodden
 
             Physics.SyncTransforms();
             if (cc) cc.enabled = true;
+            SkiController.Instance?.Stop();
+            Teleported?.Invoke();
             m_SkipDistanceFrame = true;
             m_LastHeadPos = m_Head.position;
         }

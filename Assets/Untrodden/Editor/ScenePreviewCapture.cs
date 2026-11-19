@@ -14,37 +14,30 @@ namespace Untrodden.EditorTools
             EditorSceneManager.OpenScene("Assets/Untrodden/Scenes/Untrodden.unity");
             Directory.CreateDirectory("Builds/Preview");
 
-            var start = GameObject.Find("StartPoint").transform.position;
+            var startT = GameObject.Find("StartPoint").transform;
+            var start = startT.position;
             var fire0 = GameObject.Find("CampfireSite_0").transform.position;
-            var fire1 = GameObject.Find("CampfireSite_1").transform.position;
             var goal = GameObject.Find("GoalPoint").transform.position;
+            var gate3 = GameObject.Find("Gate_03").transform;
 
             var go = new GameObject("PreviewCam");
             var cam = go.AddComponent<Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = RenderSettings.fogColor;
             cam.fieldOfView = 90f;
-            cam.farClipPlane = 80f;
             cam.nearClipPlane = 0.02f;
 
-            Shot(cam, "01_start_view", start + Vector3.up * 1.6f, start + new Vector3(0f, 1.6f, 5f));
-            Shot(cam, "02_start_campfire", fire0 + new Vector3(1.5f, 1.4f, -2.5f), fire0);
-            Shot(cam, "03_forest_north", fire1 + new Vector3(0f, 1.7f, -4f), fire1 + new Vector3(0f, 1.2f, 20f));
-            var villageEye = goal + new Vector3(0f, 0f, -26f);
-            villageEye.y = Terrain.activeTerrain.SampleHeight(villageEye) + Terrain.activeTerrain.transform.position.y + 1.7f;
-            Shot(cam, "04_village", villageEye, goal + Vector3.up * 2f);
-            var bridge = GameObject.Find("Bridge_0").transform;
-            var bEye = bridge.position - bridge.forward * 16f;
-            bEye.y = Terrain.activeTerrain.SampleHeight(bEye) + Terrain.activeTerrain.transform.position.y + 1.7f;
-            Shot(cam, "06_trail_bridge", bEye, bridge.position + Vector3.up * 0.8f);
-            var sh = GameObject.Find("ShelterZone_2").transform.position;
-            Shot(cam, "07_shelter_branch", sh + new Vector3(-6f, 1.7f, -8f), sh + Vector3.up * 1.5f);
-            Shot(cam, "08_overview_high", new Vector3(120f, 160f, 150f), new Vector3(120f, 0f, 151f), fogOff: true, far: 600f);
-            Shot(cam, "09_trail_from_above", start + new Vector3(0f, 45f, 30f), start + new Vector3(0f, 0f, 31f), fogOff: true, far: 300f);
-            var tz = new Vector3(start.x - 2f, 0f, start.z + 14f);
-            tz.y = Terrain.activeTerrain.SampleHeight(tz) + Terrain.activeTerrain.transform.position.y + 1.7f;
-            Shot(cam, "10_trail_walk", tz, tz + new Vector3(4f, -0.6f, 20f));
-            Shot(cam, "05_overview", new Vector3(120f, 90f, -20f), new Vector3(120f, 0f, 160f), fogOff: true, far: 600f);
+            Shot(cam, "01_start_view", start + Vector3.up * 1.6f, start + Vector3.up * 1.2f + startT.forward * 10f);
+            Shot(cam, "02_slope_down", start + Vector3.up * 1.6f + startT.forward * 8f, start + startT.forward * 40f + Vector3.down * 8f);
+            var gEye = gate3.position - gate3.forward * 14f;
+            gEye.y = Terrain.activeTerrain.SampleHeight(gEye) + Terrain.activeTerrain.transform.position.y + 1.6f;
+            Shot(cam, "03_gate", gEye, gate3.position + Vector3.up * 0.8f);
+            Shot(cam, "04_campfire", fire0 + new Vector3(0f, 2f, -6f), fire0);
+            var fEye = goal - Vector3.forward * 18f;
+            fEye.y = Terrain.activeTerrain.SampleHeight(fEye) + Terrain.activeTerrain.transform.position.y + 1.6f;
+            Shot(cam, "05_finish", fEye, goal + Vector3.up * 2f + Vector3.forward * 10f);
+            Shot(cam, "06_overview_side", new Vector3(-80f, 150f, 200f), new Vector3(120f, 30f, 200f), fogOff: true, far: 700f);
+            Shot(cam, "07_overview_top", new Vector3(120f, 260f, 200f), new Vector3(120f, 0f, 201f), fogOff: true, far: 700f);
 
             Object.DestroyImmediate(go);
             Debug.Log("[Preview] done");

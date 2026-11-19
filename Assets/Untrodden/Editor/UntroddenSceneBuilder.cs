@@ -36,7 +36,7 @@ namespace Untrodden.EditorTools
         const string CreatorName = "채경희";
 
         // 지형 치수 (월드 좌표, 미터)
-        const float SizeX = 240f, SizeZ = 440f, TerrainBase = -10f, TerrainHeight = 80f;
+        const float SizeX = 240f, SizeZ = 440f, TerrainBase = -10f, TerrainHeight = 180f;
         const float SeaZ = 402f, SeaLevel = 0.4f;
         const int HeightRes = 513, AlphaRes = 512;
         // 플레이어가 다닐 수 있는 영역: 양옆·남쪽 벽 비탈과 바다를 뺀 안쪽
@@ -69,21 +69,16 @@ namespace Untrodden.EditorTools
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // 주요 지점
-            var start = new Vector2(RiverX(22f) + 20f, 22f);
-            var fires = new[]
-            {
-                new Vector2(start.x - 3f, start.y + 3f),
-                new Vector2(RiverX(140f) - 18f, 140f),
-                new Vector2(RiverX(262f) + 18f, 262f),
-            };
-            var village = new Vector2(RiverX(386f) + 30f, 386f);
+            BuildProfile();
+            var start = new Vector2(RunX(StartZ), StartZ);
+            var fires = FirePositions();
+            var village = new Vector2(RunX(VillageZ), VillageZ);
 
-            AddFlat(start, 9f);
-            foreach (var f in fires) AddFlat(f, 7f);
-            AddFlat(village, 30f);
-
-            var shelterPos = ShelterPositions();
-            PlanTrails(start, fires, village, shelterPos);
+            AddFlat(start, 10f);
+            foreach (var f in fires) AddFlat(f, 5f);
+            AddFlat(village, 26f);
+            PlanCourse(start, fires, village);
+            CreateCourseMaterials();
 
             SetupLighting();
             BuildTerrain();
@@ -92,23 +87,23 @@ namespace Untrodden.EditorTools
             BuildWater(env);
             BuildBoundary(env);
             BuildForest(env);
-            BuildBridges(env);
-            var shelters = BuildShelters(env, shelterPos);
-            BuildMushrooms(env);
             BuildVillage(env, village);
 
-            var startPoint = Marker("StartPoint", start, 0f);
-            var goalPoint = Marker("GoalPoint", village, 0f);
+            var startPoint = Marker("StartPoint", start, StartYaw());
+            var goal = new Vector2(RunX(FinishZ), FinishZ);
+            var goalPoint = Marker("GoalPoint", goal, 0f);
 
             var gameplay = new GameObject("Gameplay").transform;
             for (int i = 0; i < fires.Length; i++)
-                BuildCampfireSite(gameplay, i, fires[i], i == 0 ? startPoint : null, i == 0);
+                BuildCampfireSite(gameplay, i, fires[i]);
+            var gates = BuildGates(gameplay);
+            BuildArch(gameplay, "StartArch", StartZ + 11f, "START", s_FlagBlue);
+            BuildArch(gameplay, "FinishArch", FinishZ, "FINISH", s_FlagRed);
 
             var rig = BuildRig(start);
             var cam = rig.Camera;
-            BuildSystems(rig, cam, startPoint, goalPoint, start);
+            BuildSystems(rig, cam, startPoint, goalPoint, start, gates);
 
-            Debug.Log($"[Untrodden] shelters: {shelters}");
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
@@ -123,54 +118,6 @@ namespace Untrodden.EditorTools
         }
 
         // ───────────────────────── 지형 ─────────────────────────
-
-        static float RiverX(float z) => 120f + 32f * Mathf.Sin(z / 70f) + 9f * Mathf.Sin(z / 23f + 1.3f);
-
-        static float BaseHeight(float x, float z)
-        {
-            float slope = z < 400f
-                ? 2.5f + 38f * Mathf.Pow(1f - z / 400f, 1.2f)
-                : Mathf.Lerp(2.5f, -3f, Mathf.Clamp01((z - 400f) / 10f));
-
-            float n = (Mathf.PerlinNoise(x / 55f + 3.1f, z / 55f + 7.7f) - 0.5f) * 10f
-                    + (Mathf.PerlinNoise(x / 14f + 11f, z / 14f + 5f) - 0.5f) * 2.5f;
-            n *= Mathf.Clamp01((SeaZ - z) / 25f); // 해안 가까이는 평평하게
-
-            float walls = 32f * SmoothStep(26f, 0f, x) + 32f * SmoothStep(SizeX - 26f, SizeX, x)
-                        + 26f * SmoothStep(16f, 0f, z);
-            return slope + n + walls;
-        }
-
-        static float RiverDistance(float x, float z) => Mathf.Abs(x - RiverX(z));
-
-        static float HeightNoFlat(float x, float z)
-        {
-            float h = BaseHeight(x, z);
-            float d = RiverDistance(x, z);
-            if (d < 13f)
-            {
-                float center = BaseHeight(RiverX(z), z);
-                float bed = center - 2.6f * (1f - Mathf.Clamp01(d / 8f) * Mathf.Clamp01(d / 8f));
-                h = Mathf.Lerp(bed, h, SmoothStep(6f, 13f, d));
-            }
-            if (z > SeaZ) h = Mathf.Min(h, -1.5f);
-            return h;
-        }
-
-        static float Height(float x, float z)
-        {
-            float h = HeightNoFlat(x, z);
-            foreach (var (c, r, target) in s_Flats)
-            {
-                float d = Vector2.Distance(c, new Vector2(x, z));
-                if (d < r) h = Mathf.Lerp(h, target, SmoothStep(r, r * 0.55f, d));
-            }
-            return h;
-        }
-
-        static float RiverWaterY(float z) => BaseHeight(RiverX(z), z) - 1.3f;
-
-        static void AddFlat(Vector2 c, float r) => s_Flats.Add((c, r, Mathf.Max(HeightNoFlat(c.x, c.y), SeaLevel + 1.2f)));
 
         static void BuildTerrain()
         {
@@ -191,33 +138,27 @@ namespace Untrodden.EditorTools
 
             data.terrainLayers = new[]
             {
-                Layer("Snow", new Color(0.93f, 0.95f, 0.98f), new Color(0.82f, 0.86f, 0.92f)),
+                Layer("Snow", new Color(0.93f, 0.95f, 0.98f), new Color(0.82f, 0.86f, 0.92f)),   // 숲속 자연설
                 Layer("Rock", new Color(0.45f, 0.46f, 0.48f), new Color(0.32f, 0.33f, 0.35f)),
-                Layer("RiverBank", new Color(0.42f, 0.37f, 0.3f), new Color(0.6f, 0.6f, 0.58f)),
-                Layer("Trail", new Color(0.7f, 0.72f, 0.77f), new Color(0.56f, 0.57f, 0.6f)), // 밟혀 다져진 눈길
+                Layer("Piste", new Color(0.8f, 0.84f, 0.9f), new Color(0.7f, 0.74f, 0.81f)),   // 정설된 슬로프
             };
 
-            var alpha = new float[AlphaRes, AlphaRes, 4];
+            var alpha = new float[AlphaRes, AlphaRes, 3];
             for (int iz = 0; iz < AlphaRes; iz++)
             for (int ix = 0; ix < AlphaRes; ix++)
             {
                 float nx = ix / (float)(AlphaRes - 1), nz = iz / (float)(AlphaRes - 1);
                 float x = nx * SizeX, z = nz * SizeZ;
                 float steep = data.GetSteepness(nx, nz);
-                float rock = SmoothStep(26f, 38f, steep);
-                float bank = SmoothStep(11f, 7f, RiverDistance(x, z)) + (z > SeaZ - 8f ? 1f : 0f);
-                bank = Mathf.Clamp01(bank) * (1f - rock);
-                float trail = SmoothStep(0.6f, -0.5f, TrailEdge(x, z)) * (1f - rock) * (1f - bank);
-                float snow = Mathf.Max(0f, 1f - rock - bank - trail);
+                float rock = SmoothStep(30f, 42f, steep);
+                bool onCourse = z > StartZ - 14f && z < FinishZ + 30f;
+                float piste = onCourse ? SmoothStep(0.8f, -0.8f, RunEdge(x, z)) * (1f - rock) : 0f;
+                float snow = Mathf.Max(0f, 1f - rock - piste);
                 alpha[iz, ix, 0] = snow;
                 alpha[iz, ix, 1] = rock;
-                alpha[iz, ix, 2] = bank;
-                alpha[iz, ix, 3] = trail;
+                alpha[iz, ix, 2] = piste;
             }
             data.SetAlphamaps(0, 0, alpha);
-            float trailSum = 0f;
-            for (int iz = 0; iz < AlphaRes; iz++) for (int ix = 0; ix < AlphaRes; ix++) trailSum += alpha[iz, ix, 3];
-            Debug.Log($"[Untrodden] trail texels: {trailSum:0}");
             EditorUtility.SetDirty(data);
 
             var go = Terrain.CreateTerrainGameObject(data);
@@ -251,35 +192,6 @@ namespace Untrodden.EditorTools
         static void BuildWater(Transform parent)
         {
             var water = FindMaterial("SyntyStudios_Water", "Water");
-
-            // 강: 중심선을 따라 내려가는 띠 메시
-            var verts = new List<Vector3>();
-            var uvs = new List<Vector2>();
-            var tris = new List<int>();
-            const float half = 8.5f;
-            int i = 0;
-            for (float z = -4f; z <= SeaZ + 6f; z += 2f, i++)
-            {
-                float cx = RiverX(z);
-                float y = Mathf.Max(RiverWaterY(z), SeaLevel);
-                verts.Add(new Vector3(cx - half, y, z));
-                verts.Add(new Vector3(cx + half, y, z));
-                uvs.Add(new Vector2(0f, z / 10f));
-                uvs.Add(new Vector2(1f, z / 10f));
-                if (i > 0)
-                {
-                    int b = (i - 1) * 2;
-                    tris.AddRange(new[] { b, b + 2, b + 1, b + 1, b + 2, b + 3 });
-                }
-            }
-            var mesh = new Mesh { name = "River" };
-            mesh.SetVertices(verts);
-            mesh.SetUVs(0, uvs);
-            mesh.SetTriangles(tris, 0);
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-            CreateOrReplace(mesh, GenDir + "/RiverMesh.asset");
-            MeshObject("River", parent, mesh, water);
 
             // 바다
             var sea = new Mesh { name = "Sea" };
@@ -318,61 +230,6 @@ namespace Untrodden.EditorTools
         }
 
         // ───────────────────────── 숲·바위 ─────────────────────────
-
-        static int BuildShelters(Transform parent, Vector2[] positions)
-        {
-            var root = new GameObject("Shelters").transform;
-            root.SetParent(parent);
-            var big = Prefabs("SM_Rock_Cluster_Large_01", "SM_Rock_Cluster_Large_02", "SM_Rock_Cluster_Large_03", "SM_Rock_Cluster_Large_04");
-            int n = 0;
-            foreach (var p in positions)
-            {
-                if (big.Count > 0)
-                {
-                    var rock = Place(Pick(big), root, Ground(p) + Vector3.down * 0.5f, Rand(0f, 360f), 1f);
-                    FitToSize(rock, 7f);
-                    SnowCover(rock);
-                    EnsureMeshColliders(rock);
-                    MarkStatic(rock);
-                }
-                var zone = new GameObject($"ShelterZone_{n}");
-                zone.transform.SetParent(root);
-                zone.transform.position = Ground(p);
-                zone.AddComponent<ShelterZone>().radius = 6.5f;
-                n++;
-            }
-            return n;
-        }
-
-        static void BuildMushrooms(Transform parent)
-        {
-            var root = new GameObject("Food").transform;
-            root.SetParent(parent);
-            // 막다른 샛길 끝 공터에 2개씩(탐험 보상) + 강가에 몇 개
-            var spots = new List<Vector2>();
-            foreach (var d in s_DeadEnds)
-                for (int k = 0; k < 2; k++)
-                    spots.Add(d + new Vector2(Rand(-2.5f, 2.5f), Rand(-2.5f, 2.5f)));
-            for (int k = 0; k < 6; k++)
-            {
-                float z = Mathf.Lerp(50f, 360f, k / 5f) + Rand(-8f, 8f);
-                float side = Rand(0f, 1f) < 0.5f ? -1f : 1f;
-                spots.Add(new Vector2(RiverX(z) + side * Rand(9.5f, 11.5f), z));
-            }
-            for (int i = 0; i < spots.Count; i++)
-            {
-                var p = spots[i];
-                var go = new GameObject($"Mushroom_{i}");
-                go.transform.SetParent(root);
-                var (_, thick) = GrabVisual(go.transform, "SM_Plant_Mushrooms_01", 0.14f, false, PrimitiveType.Sphere, s_RedMat);
-                go.AddComponent<SphereCollider>().radius = 0.06f;
-                MakeGrabbable(go, 0.2f);
-                var e = go.AddComponent<Edible>();
-                e.displayName = "버섯";
-                e.nutrition = 35f;
-                go.transform.position = Ground(p) + Vector3.up * 0.15f;
-            }
-        }
 
         static void BuildVillage(Transform parent, Vector2 center)
         {
@@ -463,7 +320,7 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 모닥불 자리 ─────────────────────────
 
-        static void BuildCampfireSite(Transform parent, int index, Vector2 pos2, Transform respawnOverride, bool withCompass)
+        static void BuildCampfireSite(Transform parent, int index, Vector2 pos2)
         {
             var site = new GameObject($"CampfireSite_{index}").transform;
             site.SetParent(parent);
@@ -492,24 +349,6 @@ namespace Untrodden.EditorTools
                 foreach (var col in s.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
             }
 
-            // 장작 소켓 3개 (원뿔 모양으로 기대어 세움)
-            var sockets = new List<FirewoodSocket>();
-            for (int i = 0; i < 3; i++)
-            {
-                float a = (i * 120f + 30f) * Mathf.Deg2Rad;
-                var radial = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
-                var sgo = new GameObject($"LogSocket_{i}");
-                sgo.transform.SetParent(fireGo.transform);
-                sgo.transform.position = center + radial * 0.16f + Vector3.up * 0.24f;
-                sgo.transform.rotation = Quaternion.AngleAxis(25f, Vector3.Cross(radial, Vector3.up));
-                var sc = sgo.AddComponent<SphereCollider>();
-                sc.isTrigger = true;
-                sc.radius = 0.2f;
-                sockets.Add(sgo.AddComponent<FirewoodSocket>());
-            }
-            fire.sockets = sockets.ToArray();
-            fire.logsRequired = 2;
-
             var fx = Prefab("FX_Fire_01");
             if (fx)
             {
@@ -527,123 +366,21 @@ namespace Untrodden.EditorTools
             fire.fireLight = light;
             fire.crackle = AudioObject("Crackle", fireGo.transform, center + Vector3.up * 0.3f, ProceduralAudioSource.Kind.Crackle, false, 1f, 0.7f);
 
-            // 리스폰 지점: 불 남쪽 2.2m에서 북쪽(진행 방향)을 바라봄
-            if (respawnOverride != null) fire.respawnPoint = respawnOverride;
-            else fire.respawnPoint = Marker("RespawnPoint", new Vector2(pos2.x, pos2.y - 2.2f), 0f, site);
+            // 리스폰 지점: 불 옆 슬로프 가장자리에서 아래(진행 방향)를 바라봄
+            float side = Mathf.Sign(RunX(pos2.y) - pos2.x);
+            var rp = new Vector2(pos2.x + side * 3.5f, pos2.y + 1f);
+            var t = RunTangent(rp.y);
+            fire.respawnPoint = Marker("RespawnPoint", rp, Mathf.Atan2(t.x, t.y) * Mathf.Rad2Deg, site);
 
-            // 장작 더미
-            for (int i = 0; i < 4; i++)
+            // 장작더미·통나무 의자 장식
+            var logPrefab = Prefab("SM_Tree_Log_01");
+            if (logPrefab)
             {
-                var p = new Vector2(pos2.x + 1.9f + i * 0.18f, pos2.y - 0.6f + (i % 2) * 0.25f);
-                var log = new GameObject($"Firewood_{i}");
-                log.transform.SetParent(site);
-                var (_, thick) = GrabVisual(log.transform, "SM_Tree_Log_01", 0.5f, true, PrimitiveType.Cylinder, s_WoodMat);
-                var cap = log.AddComponent<CapsuleCollider>();
-                cap.direction = 1;
-                cap.height = 0.5f;
-                cap.radius = Mathf.Clamp(thick * 0.5f, 0.03f, 0.08f);
-                MakeGrabbable(log, 0.8f);
-                log.AddComponent<Firewood>();
-                log.transform.position = Ground(p) + Vector3.up * 0.12f;
-                log.transform.rotation = Quaternion.Euler(0f, Rand(-20f, 20f), 90f);
+                var log = Place(logPrefab, site, Ground(new Vector2(pos2.x - side * 1.6f, pos2.y)), 90f, 1f);
+                FitToSize(log, 1.6f);
+                SnowCover(log);
+                foreach (var col in log.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
             }
-
-            // 그루터기 위의 파이어스틱 (+ 시작 지점에는 나침반)
-            var stumpPos = new Vector2(pos2.x - 1.6f, pos2.y - 1.1f);
-            var stumpPrefab = Prefab("SM_Tree_Stump_01");
-            float top = GroundY(stumpPos) + 0.45f;
-            if (stumpPrefab)
-            {
-                var stump = Place(stumpPrefab, site, Ground(stumpPos), Rand(0f, 360f), 1f);
-                FitToSize(stump, 0.8f);
-                var b = WorldBounds(stump);
-                top = b.max.y;
-                EnsureMeshColliders(stump);
-            }
-            for (int i = 0; i < 2; i++)
-            {
-                var stick = BuildFireStick(site, i);
-                stick.transform.position = new Vector3(stumpPos.x, top + 0.04f, stumpPos.y - 0.06f + i * 0.12f);
-                stick.transform.rotation = Quaternion.Euler(0f, 0f, 90f);
-            }
-            if (withCompass)
-            {
-                var compass = BuildCompass(site);
-                compass.transform.position = new Vector3(stumpPos.x + 0.15f, top + 0.03f, stumpPos.y + 0.18f);
-            }
-        }
-
-        static GameObject BuildFireStick(Transform parent, int i)
-        {
-            var go = new GameObject($"FireStick_{i}");
-            go.transform.SetParent(parent);
-            var vis = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            Object.DestroyImmediate(vis.GetComponent<Collider>());
-            vis.name = "Visual";
-            vis.transform.SetParent(go.transform, false);
-            vis.transform.localScale = new Vector3(0.028f, 0.18f, 0.028f);
-            vis.GetComponent<Renderer>().sharedMaterial = i == 0 ? s_WoodMat : s_IvoryMat;
-
-            var cap = go.AddComponent<CapsuleCollider>();
-            cap.direction = 1;
-            cap.height = 0.36f;
-            cap.radius = 0.016f;
-
-            var zone = new GameObject("StrikeZone");
-            zone.transform.SetParent(go.transform, false);
-            var trig = zone.AddComponent<CapsuleCollider>();
-            trig.isTrigger = true;
-            trig.direction = 1;
-            trig.height = 0.42f;
-            trig.radius = 0.04f;
-
-            MakeGrabbable(go, 0.3f);
-            var stick = go.AddComponent<FireStick>();
-            stick.sparks = SparkSystem(go.transform);
-            stick.strikeAudio = AudioObject("StrikeAudio", go.transform, go.transform.position, ProceduralAudioSource.Kind.Knock, false, 1f, 0.8f);
-            return go;
-        }
-
-        static GameObject BuildCompass(Transform parent)
-        {
-            var go = new GameObject("Compass");
-            go.transform.SetParent(parent);
-            var body = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            Object.DestroyImmediate(body.GetComponent<Collider>());
-            body.name = "Body";
-            body.transform.SetParent(go.transform, false);
-            body.transform.localScale = new Vector3(0.09f, 0.008f, 0.09f);
-            body.GetComponent<Renderer>().sharedMaterial = s_DarkMat;
-
-            var face = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            Object.DestroyImmediate(face.GetComponent<Collider>());
-            face.name = "Face";
-            face.transform.SetParent(go.transform, false);
-            face.transform.localPosition = new Vector3(0f, 0.0085f, 0f);
-            face.transform.localScale = new Vector3(0.08f, 0.001f, 0.08f);
-            face.GetComponent<Renderer>().sharedMaterial = s_IvoryMat;
-
-            var pivot = new GameObject("Needle").transform;
-            pivot.SetParent(go.transform, false);
-            pivot.localPosition = new Vector3(0f, 0.012f, 0f);
-            Needle(pivot, 0.017f, s_RedMat);
-            Needle(pivot, -0.017f, s_DarkMat);
-
-            var box = go.AddComponent<BoxCollider>();
-            box.size = new Vector3(0.09f, 0.025f, 0.09f);
-            MakeGrabbable(go, 0.2f);
-            go.AddComponent<Compass>().needle = pivot;
-            return go;
-        }
-
-        static void Needle(Transform pivot, float z, Material m)
-        {
-            var n = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            Object.DestroyImmediate(n.GetComponent<Collider>());
-            n.transform.SetParent(pivot, false);
-            n.transform.localPosition = new Vector3(0f, 0f, z);
-            n.transform.localScale = new Vector3(0.007f, 0.003f, 0.034f);
-            n.GetComponent<Renderer>().sharedMaterial = m;
         }
 
         // ───────────────────────── XR 리그 ─────────────────────────
@@ -652,7 +389,7 @@ namespace Untrodden.EditorTools
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RigPrefab);
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            go.transform.SetPositionAndRotation(Ground(start), Quaternion.identity);
+            go.transform.SetPositionAndRotation(Ground(start), Quaternion.Euler(0f, StartYaw(), 0f));
             var rig = go.GetComponent<XROrigin>();
 
             var cam = rig.Camera;
@@ -661,13 +398,31 @@ namespace Untrodden.EditorTools
             cam.farClipPlane = CameraFar;
             cam.nearClipPlane = 0.02f;
 
-            // 이동 방식: 왼쪽 스틱 연속 이동 + 오른쪽 스틱 부드러운 회전. 순간이동은 쓰지 않는다.
+            // 이동 방식: 스키(폴) + 멈췄을 때만 왼쪽 스틱 걷기·오른쪽 스틱 회전. 순간이동은 쓰지 않는다.
             ConfigureLocomotion(go);
-
-            // 이동·회전 중에만 비네팅
-            var vigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(VignettePrefab);
             var move = go.GetComponentInChildren<ContinuousMoveProvider>(true);
             var turn = go.GetComponentInChildren<ContinuousTurnProvider>(true);
+            if (move != null)
+            {
+                move.moveSpeed = 1.3f; // 스키 신고 걷기
+                EditorUtility.SetDirty(move);
+            }
+
+            // 스키 폴·스키·스키 이동
+            var left = FindDeep(go.transform, "Left Controller");
+            var right = FindDeep(go.transform, "Right Controller");
+            var host = move != null ? move.gameObject : go;
+            var ski = host.AddComponent<SkiController>();
+            ski.rig = rig;
+            if (left != null) ski.leftPole = BuildPole(left, SkiPole.Side.Left);
+            if (right != null) ski.rightPole = BuildPole(right, SkiPole.Side.Right);
+            ski.skis = BuildSkis();
+            ski.walkProviders = new Behaviour[] { move, turn };
+            ski.windAudio = AudioObject("SkiWind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0f);
+            ski.crashAudio = AudioObject("CrashThud", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Knock, false, 0f, 0.9f);
+
+            // 스키·걷기·회전 중에만 비네팅
+            var vigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(VignettePrefab);
             if (vigPrefab != null)
             {
                 var vig = (GameObject)PrefabUtility.InstantiatePrefab(vigPrefab, cam.transform);
@@ -677,6 +432,7 @@ namespace Untrodden.EditorTools
                 if (ctrl != null && move != null)
                 {
                     ctrl.locomotionVignetteProviders.Clear();
+                    ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = ski, enabled = true });
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = move, enabled = true });
                     if (turn != null)
                         ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = turn, enabled = true });
@@ -687,6 +443,13 @@ namespace Untrodden.EditorTools
         }
 
         const float TurnSpeed = 50f; // 초당 회전 각도 (부드러운 회전)
+
+        /// <summary>출발 방향: 슬로프 아래쪽.</summary>
+        static float StartYaw()
+        {
+            var t = RunTangent(StartZ + 8f);
+            return Mathf.Atan2(t.x, t.y) * Mathf.Rad2Deg;
+        }
 
         static void ConfigureLocomotion(GameObject rigGo)
         {
@@ -717,7 +480,7 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 시스템·UI ─────────────────────────
 
-        static void BuildSystems(XROrigin rig, Camera cam, Transform startPoint, Transform goalPoint, Vector2 start)
+        static void BuildSystems(XROrigin rig, Camera cam, Transform startPoint, Transform goalPoint, Vector2 start, SlalomGate[] gates)
         {
             var systems = new GameObject("Systems");
 
@@ -729,8 +492,12 @@ namespace Untrodden.EditorTools
             gm.rig = rig;
             gm.startPoint = startPoint;
             gm.goalPoint = goalPoint;
-            gm.goalRadius = 10f;
+            gm.goalRadius = RunHalfWidth(FinishZ) + 3f;
             systems.AddComponent<PlayerVitals>();
+            var course = systems.AddComponent<CourseTracker>();
+            course.gates = gates;
+            course.missPenalty = 5f;
+            course.passAudio = AudioObject("GatePass", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Beep, false, 0f, 0.25f);
             var playArea = systems.AddComponent<PlayArea>();
             playArea.min = PlayMin;
             playArea.max = PlayMax;
@@ -759,30 +526,15 @@ namespace Untrodden.EditorTools
             breathGo.AddComponent<BreathPuff>().head = cam.transform;
             BreathSystem(breathGo);
 
-            // 허리 소켓 2개 (나침반·파이어스틱 보관)
-            var belt = new GameObject("Belt");
-            var bf = belt.AddComponent<BodyFollower>();
-            bf.head = cam.transform;
-            bf.heightBelowHead = 0.6f;
-            foreach (var x in new[] { -0.22f, 0.22f })
-            {
-                var s = new GameObject(x < 0 ? "BeltSocket_L" : "BeltSocket_R");
-                s.transform.SetParent(belt.transform, false);
-                s.transform.localPosition = new Vector3(x, 0f, 0.12f);
-                var c = s.AddComponent<SphereCollider>();
-                c.isTrigger = true;
-                c.radius = 0.12f;
-                s.AddComponent<XRSocketInteractor>();
-            }
-
             // 시작 화면
             var title = WorldCanvas("TitleCanvas", null, new Vector2(1000, 720), 0.0016f, true, cam);
-            title.transform.SetPositionAndRotation(Ground(start) + new Vector3(0f, 1.6f, 2.6f), Quaternion.identity);
+            var startRot = Quaternion.Euler(0f, StartYaw(), 0f);
+            title.transform.SetPositionAndRotation(Ground(start) + Vector3.up * 1.6f + startRot * Vector3.forward * 2.6f, startRot);
             Panel(title.transform, new Color(0.05f, 0.07f, 0.1f, 0.82f));
             Text(title.transform, "Untrodden", 120, new Vector2(0, 230), new Vector2(950, 150), Color.white, FontStyles.Bold);
-            Text(title.transform, "눈보라와 곰을 피해 얼어붙은 숲을 지나\n바닷가 마을까지 살아서 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
+            Text(title.transform, "눈 덮인 산을 스키로 내려가며 깃발 관문을 통과하고\n바닷가 마을까지 가장 빠르게 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
             Text(title.transform, $"제작  {CreatorName}", 32, new Vector2(0, 0), new Vector2(900, 50), new Color(1f, 0.8f, 0.5f));
-            Text(title.transform, "왼쪽 스틱으로 걷기 · 오른쪽 스틱으로 천천히 돌기\n그립 버튼으로 잡기 · 나침반 빨간 바늘이 북쪽(바다)\n갇히면 왼쪽 메뉴 버튼을 길게 눌러 모닥불로 복귀", 26, new Vector2(0, -95), new Vector2(950, 120), new Color(0.75f, 0.8f, 0.88f));
+            Text(title.transform, "양손 폴을 눈에 대고 뒤로 밀기: 출발·가속 · 한쪽 폴 끌기: 회전 · 양쪽: 브레이크\n멈췄을 때 왼쪽 스틱 걷기 · 막히면 왼쪽 메뉴 버튼 길게: 모닥불로\n놓친 관문 +5초 · 부딪히거나 눈보라를 맞으면 체력 감소 · 모닥불을 지나면 회복", 24, new Vector2(0, -95), new Vector2(980, 120), new Color(0.75f, 0.8f, 0.88f));
             var startBtn = Button(title.transform, "시작하기", new Vector2(0, -235));
             UnityEventTools.AddPersistentListener(startBtn.onClick, new UnityAction(gm.StartGame));
             gm.titleCanvas = title.gameObject;
@@ -790,8 +542,8 @@ namespace Untrodden.EditorTools
             // 결과 화면
             var result = WorldCanvas("ResultCanvas", null, new Vector2(900, 620), 0.0016f, true, cam);
             Panel(result.transform, new Color(0.05f, 0.07f, 0.1f, 0.85f));
-            Text(result.transform, "마을에 도착했어요!", 70, new Vector2(0, 200), new Vector2(850, 110), new Color(1f, 0.85f, 0.55f), FontStyles.Bold);
-            var stats = Text(result.transform, "", 44, new Vector2(0, 30), new Vector2(800, 220), Color.white);
+            Text(result.transform, "결승선 통과!", 70, new Vector2(0, 210), new Vector2(850, 110), new Color(1f, 0.85f, 0.55f), FontStyles.Bold);
+            var stats = Text(result.transform, "", 40, new Vector2(0, 25), new Vector2(840, 260), Color.white);
             var rs = result.gameObject.AddComponent<ResultScreen>();
             rs.statsText = stats;
             var again = Button(result.transform, "다시 하기", new Vector2(0, -200));
@@ -805,12 +557,29 @@ namespace Untrodden.EditorTools
             hud.transform.localRotation = left != null ? Quaternion.Euler(62f, 0f, 0f) : Quaternion.identity;
             Panel(hud.transform, new Color(0.04f, 0.05f, 0.08f, 0.78f));
             var w = hud.gameObject.AddComponent<WristHUD>();
-            w.timeText = Text(hud.transform, "00:00", 30, new Vector2(95, 95), new Vector2(120, 40), Color.white);
-            w.healthFill = Bar(hud.transform, "체력", 50, new Color(0.9f, 0.25f, 0.25f));
-            w.warmthFill = Bar(hud.transform, "체온", 5, new Color(1f, 0.6f, 0.2f));
-            w.foodFill = Bar(hud.transform, "허기", -40, new Color(0.85f, 0.75f, 0.3f));
-            w.statusText = Text(hud.transform, "", 22, new Vector2(0, -78), new Vector2(300, 30), Color.white);
-            w.noticeText = Text(hud.transform, "", 18, new Vector2(0, -108), new Vector2(300, 40), new Color(1f, 0.9f, 0.7f));
+            w.timeText = Text(hud.transform, "0:00.0", 30, new Vector2(-60, 95), new Vector2(190, 40), Color.white, FontStyles.Bold);
+            w.speedText = Text(hud.transform, "0 km/h", 22, new Vector2(100, 95), new Vector2(110, 36), new Color(0.8f, 0.9f, 1f));
+            w.healthFill = Bar(hud.transform, "체력", 55, new Color(0.9f, 0.25f, 0.25f));
+            w.gateText = Text(hud.transform, "관문 0/0", 24, new Vector2(-65, 8), new Vector2(180, 34), Color.white);
+            w.statusText = Text(hud.transform, "", 20, new Vector2(-65, -30), new Vector2(180, 30), Color.white);
+            w.noticeText = Text(hud.transform, "", 17, new Vector2(0, -95), new Vector2(305, 50), new Color(1f, 0.9f, 0.7f));
+
+            // 나침반: 위쪽 = 지금 바라보는 방향. N은 북쪽(바다), 노란 화살표는 다음 관문
+            var ring = Image(hud.transform, s_Ring, new Color(1f, 1f, 1f, 0.7f));
+            ring.rectTransform.anchoredPosition = new Vector2(100, -12);
+            ring.rectTransform.sizeDelta = new Vector2(88, 88);
+            RectTransform Dial(string name)
+            {
+                var d = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+                d.SetParent(ring.rectTransform, false);
+                d.anchoredPosition = Vector2.zero;
+                d.sizeDelta = new Vector2(88, 88);
+                return d;
+            }
+            w.compassNorth = Dial("North");
+            Text(w.compassNorth, "N", 20, new Vector2(0, 33), new Vector2(30, 26), new Color(1f, 0.35f, 0.3f), FontStyles.Bold);
+            w.compassTarget = Dial("Target");
+            Text(w.compassTarget, "▲", 26, new Vector2(0, 18), new Vector2(34, 30), new Color(1f, 0.85f, 0.2f));
             w.alertAudio = AudioObject("AlertBeep", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Beep, false, 0f, 0.5f);
 
             // 시야 아래쪽 알림
