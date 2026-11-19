@@ -25,7 +25,7 @@ namespace Untrodden.EditorTools
     /// 남쪽이 높고 북쪽이 바다인 지형, 강, 숲, 모닥불 체크포인트, 바위 그늘, 마을, XR 리그와 UI를 배치한다.
     /// 다시 실행하면 씬과 생성 애셋을 새로 만든다.
     /// </summary>
-    public static class UntroddenSceneBuilder
+    public static partial class UntroddenSceneBuilder
     {
         const string Root = "Assets/Untrodden";
         const string GenDir = Root + "/Generated";
@@ -38,11 +38,14 @@ namespace Untrodden.EditorTools
         // 지형 치수 (월드 좌표, 미터)
         const float SizeX = 240f, SizeZ = 440f, TerrainBase = -10f, TerrainHeight = 80f;
         const float SeaZ = 402f, SeaLevel = 0.4f;
-        const int HeightRes = 513, AlphaRes = 256;
+        const int HeightRes = 513, AlphaRes = 512;
         // 플레이어가 다닐 수 있는 영역: 양옆·남쪽 벽 비탈과 바다를 뺀 안쪽
         static readonly Vector2 PlayMin = new(30f, 16f), PlayMax = new(SizeX - 30f, SeaZ + 1f);
 
-        static readonly Color FogColor = new(0.72f, 0.78f, 0.85f);
+        static readonly Color FogColor = new(0.63f, 0.69f, 0.77f);
+        static readonly Color StormFogColor = new(0.8f, 0.83f, 0.87f);
+        // 시야: 안개가 끝나는 거리 바로 뒤에서 카메라가 렌더링을 끊는다(최적화)
+        const float CalmFogStart = 4f, CalmFogEnd = 42f, StormFogEnd = 16f, CameraFar = 46f;
 
         static Terrain s_Terrain;
         static TMP_FontAsset s_Font;
@@ -79,14 +82,18 @@ namespace Untrodden.EditorTools
             foreach (var f in fires) AddFlat(f, 7f);
             AddFlat(village, 30f);
 
+            var shelterPos = ShelterPositions();
+            PlanTrails(start, fires, village, shelterPos);
+
             SetupLighting();
             BuildTerrain();
 
             var env = new GameObject("Environment").transform;
             BuildWater(env);
             BuildBoundary(env);
-            BuildForest(env, start, fires, village);
-            var shelters = BuildShelters(env);
+            BuildForest(env);
+            BuildBridges(env);
+            var shelters = BuildShelters(env, shelterPos);
             BuildMushrooms(env);
             BuildVillage(env, village);
 
@@ -169,6 +176,8 @@ namespace Untrodden.EditorTools
         {
             var data = new TerrainData { heightmapResolution = HeightRes, alphamapResolution = AlphaRes };
             data.size = new Vector3(SizeX, TerrainHeight, SizeZ);
+            // 에셋을 먼저 만든 뒤 데이터를 채워야 스플랫(알파맵) 텍스처가 함께 저장된다
+            CreateOrReplace(data, GenDir + "/TerrainData.asset");
 
             var heights = new float[HeightRes, HeightRes];
             for (int iz = 0; iz < HeightRes; iz++)
@@ -185,9 +194,10 @@ namespace Untrodden.EditorTools
                 Layer("Snow", new Color(0.93f, 0.95f, 0.98f), new Color(0.82f, 0.86f, 0.92f)),
                 Layer("Rock", new Color(0.45f, 0.46f, 0.48f), new Color(0.32f, 0.33f, 0.35f)),
                 Layer("RiverBank", new Color(0.42f, 0.37f, 0.3f), new Color(0.6f, 0.6f, 0.58f)),
+                Layer("Trail", new Color(0.7f, 0.72f, 0.77f), new Color(0.56f, 0.57f, 0.6f)), // 밟혀 다져진 눈길
             };
 
-            var alpha = new float[AlphaRes, AlphaRes, 3];
+            var alpha = new float[AlphaRes, AlphaRes, 4];
             for (int iz = 0; iz < AlphaRes; iz++)
             for (int ix = 0; ix < AlphaRes; ix++)
             {
@@ -197,14 +207,18 @@ namespace Untrodden.EditorTools
                 float rock = SmoothStep(26f, 38f, steep);
                 float bank = SmoothStep(11f, 7f, RiverDistance(x, z)) + (z > SeaZ - 8f ? 1f : 0f);
                 bank = Mathf.Clamp01(bank) * (1f - rock);
-                float snow = Mathf.Max(0f, 1f - rock - bank);
+                float trail = SmoothStep(0.6f, -0.5f, TrailEdge(x, z)) * (1f - rock) * (1f - bank);
+                float snow = Mathf.Max(0f, 1f - rock - bank - trail);
                 alpha[iz, ix, 0] = snow;
                 alpha[iz, ix, 1] = rock;
                 alpha[iz, ix, 2] = bank;
+                alpha[iz, ix, 3] = trail;
             }
             data.SetAlphamaps(0, 0, alpha);
-
-            CreateOrReplace(data, GenDir + "/TerrainData.asset");
+            float trailSum = 0f;
+            for (int iz = 0; iz < AlphaRes; iz++) for (int ix = 0; ix < AlphaRes; ix++) trailSum += alpha[iz, ix, 3];
+            Debug.Log($"[Untrodden] trail texels: {trailSum:0}");
+            EditorUtility.SetDirty(data);
 
             var go = Terrain.CreateTerrainGameObject(data);
             go.name = "Terrain";
@@ -305,71 +319,19 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 숲·바위 ─────────────────────────
 
-        static void BuildForest(Transform parent, Vector2 start, Vector2[] fires, Vector2 village)
-        {
-            var root = new GameObject("Forest").transform;
-            root.SetParent(parent);
-            var pines = Prefabs("SM_Tree_Pine_02", "SM_Tree_Pine_Large_01", "SM_Tree_Pine_Large_02", "SM_Tree_Pine_Small_02",
-                "SM_Tree_PolyPine_01", "SM_Tree_PolyPine_02", "SM_Tree_PolyPine_03", "SM_Tree_PolyPine_Sparse_01");
-            var dead = Prefabs("SM_Tree_Pine_Dead_01", "SM_Tree_Dead_01", "SM_Tree_Dead_03", "SM_Tree_Birch_Dead_01");
-            var rocks = Prefabs("SM_Rock_01", "SM_Rock_02", "SM_Rock_03", "SM_Rock_04", "SM_Rock_Boulder_01");
-            var bushes = Prefabs("SM_Plant_Bush_01", "SM_Plant_Bush_02", "SM_Plant_Fern_01");
-
-            const float spacing = 8f;
-            int trees = 0;
-            for (float z = 4f; z < SeaZ - 6f; z += spacing)
-            for (float x = 4f; x < SizeX - 4f; x += spacing)
-            {
-                var p = new Vector2(x + Rand(-3f, 3f), z + Rand(-3f, 3f));
-                float river = RiverDistance(p.x, p.y);
-                if (river < 12f) continue;
-                if (Near(p, start, 12f) || Near(p, village, 38f)) continue;
-                bool nearFire = false;
-                foreach (var f in fires) nearFire |= Near(p, f, 11f);
-                if (nearFire) continue;
-
-                float roll = Rand(0f, 1f);
-                if (roll < 0.52f && pines.Count > 0)
-                {
-                    var t = Place(Pick(pines), root, Ground(p) + Vector3.down * 0.2f, Rand(0f, 360f), Rand(0.8f, 1.3f));
-                    AddTrunkCollider(t);
-                    trees++;
-                }
-                else if (roll < 0.58f && dead.Count > 0 && river < 30f)
-                {
-                    var t = Place(Pick(dead), root, Ground(p), Rand(0f, 360f), Rand(0.8f, 1.2f));
-                    AddTrunkCollider(t);
-                }
-                else if (roll < 0.64f && rocks.Count > 0)
-                {
-                    var r = Place(Pick(rocks), root, Ground(p) + Vector3.down * 0.3f, Rand(0f, 360f), 1f);
-                    FitToSize(r, Rand(1f, 2.5f));
-                    EnsureMeshColliders(r);
-                }
-                else if (roll < 0.7f && bushes.Count > 0)
-                {
-                    Place(Pick(bushes), root, Ground(p), Rand(0f, 360f), Rand(0.8f, 1.2f));
-                }
-            }
-            MarkStatic(root.gameObject);
-            Debug.Log($"[Untrodden] trees placed: {trees}");
-        }
-
-        static int BuildShelters(Transform parent)
+        static int BuildShelters(Transform parent, Vector2[] positions)
         {
             var root = new GameObject("Shelters").transform;
             root.SetParent(parent);
             var big = Prefabs("SM_Rock_Cluster_Large_01", "SM_Rock_Cluster_Large_02", "SM_Rock_Cluster_Large_03", "SM_Rock_Cluster_Large_04");
-            float[] zs = { 75f, 112f, 195f, 228f, 318f, 350f };
             int n = 0;
-            foreach (var z in zs)
+            foreach (var p in positions)
             {
-                float side = n % 2 == 0 ? 1f : -1f;
-                var p = new Vector2(RiverX(z) + side * 21f, z);
                 if (big.Count > 0)
                 {
                     var rock = Place(Pick(big), root, Ground(p) + Vector3.down * 0.5f, Rand(0f, 360f), 1f);
                     FitToSize(rock, 7f);
+                    SnowCover(rock);
                     EnsureMeshColliders(rock);
                     MarkStatic(rock);
                 }
@@ -386,11 +348,20 @@ namespace Untrodden.EditorTools
         {
             var root = new GameObject("Food").transform;
             root.SetParent(parent);
-            for (int i = 0; i < 14; i++)
+            // 막다른 샛길 끝 공터에 2개씩(탐험 보상) + 강가에 몇 개
+            var spots = new List<Vector2>();
+            foreach (var d in s_DeadEnds)
+                for (int k = 0; k < 2; k++)
+                    spots.Add(d + new Vector2(Rand(-2.5f, 2.5f), Rand(-2.5f, 2.5f)));
+            for (int k = 0; k < 6; k++)
             {
-                float z = Mathf.Lerp(40f, 370f, i / 13f) + Rand(-8f, 8f);
+                float z = Mathf.Lerp(50f, 360f, k / 5f) + Rand(-8f, 8f);
                 float side = Rand(0f, 1f) < 0.5f ? -1f : 1f;
-                var p = new Vector2(RiverX(z) + side * Rand(9.5f, 12f), z);
+                spots.Add(new Vector2(RiverX(z) + side * Rand(9.5f, 11.5f), z));
+            }
+            for (int i = 0; i < spots.Count; i++)
+            {
+                var p = spots[i];
                 var go = new GameObject($"Mushroom_{i}");
                 go.transform.SetParent(root);
                 var (_, thick) = GrabVisual(go.transform, "SM_Plant_Mushrooms_01", 0.14f, false, PrimitiveType.Sphere, s_RedMat);
@@ -687,7 +658,7 @@ namespace Untrodden.EditorTools
             var cam = rig.Camera;
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = FogColor;
-            cam.farClipPlane = 80f;
+            cam.farClipPlane = CameraFar;
             cam.nearClipPlane = 0.02f;
 
             // 이동 방식: 왼쪽 스틱 연속 이동 + 오른쪽 스틱 부드러운 회전. 순간이동은 쓰지 않는다.
@@ -769,6 +740,11 @@ namespace Untrodden.EditorTools
             var blizzard = systems.AddComponent<Blizzard>();
             blizzard.playerCamera = cam;
             blizzard.sun = RenderSettings.sun;
+            blizzard.calmFog = FogColor;
+            blizzard.stormFog = StormFogColor;
+            blizzard.calmFogStart = CalmFogStart;
+            blizzard.calmFogEnd = CalmFogEnd;
+            blizzard.stormFogEnd = StormFogEnd;
             var snowGo = new GameObject("Snowfall");
             var follow = snowGo.AddComponent<BodyFollower>();
             follow.head = cam.transform;
@@ -776,6 +752,12 @@ namespace Untrodden.EditorTools
             follow.yawFollowSpeed = 0f;
             blizzard.snow = SnowSystem(snowGo.transform);
             blizzard.wind = AudioObject("Wind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0.2f);
+
+            // 입김
+            var breathGo = new GameObject("Breath");
+            breathGo.transform.SetParent(systems.transform);
+            breathGo.AddComponent<BreathPuff>().head = cam.transform;
+            BreathSystem(breathGo);
 
             // 허리 소켓 2개 (나침반·파이어스틱 보관)
             var belt = new GameObject("Belt");
@@ -949,20 +931,54 @@ namespace Untrodden.EditorTools
         {
             var sun = new GameObject("Sun").AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.transform.rotation = Quaternion.Euler(38f, -35f, 0f);
-            sun.color = new Color(0.85f, 0.9f, 1f);
-            sun.intensity = 0.9f;
+            // 낮게 뜬 겨울 해: 약간 따뜻한 빛 + 차가운 하늘빛 그늘
+            sun.transform.rotation = Quaternion.Euler(16f, -40f, 0f);
+            sun.color = new Color(1f, 0.92f, 0.82f);
+            sun.intensity = 0.75f;
             sun.shadows = LightShadows.None;
 
             RenderSettings.skybox = null;
-            RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.55f, 0.6f, 0.68f);
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.6f, 0.68f, 0.8f);
+            RenderSettings.ambientEquatorColor = new Color(0.5f, 0.55f, 0.64f);
+            RenderSettings.ambientGroundColor = new Color(0.42f, 0.45f, 0.52f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = FogColor;
-            RenderSettings.fogStartDistance = 8f;
-            RenderSettings.fogEndDistance = 65f;
+            RenderSettings.fogStartDistance = CalmFogStart;
+            RenderSettings.fogEndDistance = CalmFogEnd;
             RenderSettings.sun = sun;
+        }
+
+        static void BreathSystem(GameObject go)
+        {
+            var ps = go.GetComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.playOnAwake = false;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.1f, 1.6f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.09f);
+            main.startColor = new Color(1f, 1f, 1f, 0.22f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 60;
+            var emission = ps.emission;
+            emission.enabled = false;
+            var shape = ps.shape;
+            shape.enabled = false;
+            var size = ps.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 4f));
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                      new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.15f), new GradientAlphaKey(0f, 1f) });
+            col.color = g;
+            var r = go.GetComponent<ParticleSystemRenderer>();
+            r.sharedMaterial = s_SnowMat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
         }
 
         static ParticleSystem SnowSystem(Transform parent)
@@ -1006,7 +1022,7 @@ namespace Untrodden.EditorTools
             var ps = go.AddComponent<ParticleSystem>();
             var main = ps.main;
             main.playOnAwake = false;
-            main.loop = false;
+            main.loop = true;
             main.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.6f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 2f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.008f, 0.02f);

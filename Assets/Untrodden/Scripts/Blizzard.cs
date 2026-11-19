@@ -25,8 +25,11 @@ namespace Untrodden
         public Light sun;
         public Color calmFog = new(0.72f, 0.78f, 0.85f);
         public Color stormFog = new(0.86f, 0.88f, 0.9f);
-        public float calmFogEnd = 65f;
-        public float stormFogEnd = 22f;
+        public float calmFogStart = 4f;
+        public float calmFogEnd = 42f;
+        public float stormFogEnd = 16f;
+        [Tooltip("눈 파티클이 바람에 옆으로 날리는 속도(평소 → 눈보라)")]
+        public Vector2 windDrift = new(0.8f, 7f);
         public Camera playerCamera;
 
         public Phase CurrentPhase { get; private set; } = Phase.Calm;
@@ -92,13 +95,21 @@ namespace Untrodden
             var fog = Color.Lerp(calmFog, stormFog, Intensity);
             RenderSettings.fogColor = fog;
             RenderSettings.fogEndDistance = Mathf.Lerp(calmFogEnd, stormFogEnd, Intensity);
-            RenderSettings.fogStartDistance = Mathf.Lerp(8f, 2f, Intensity);
-            if (playerCamera) playerCamera.backgroundColor = fog;
+            RenderSettings.fogStartDistance = Mathf.Lerp(calmFogStart, 1.5f, Intensity);
+            if (playerCamera)
+            {
+                playerCamera.backgroundColor = fog;
+                // 안개 너머는 어차피 안 보이므로 렌더링 거리도 함께 줄인다
+                playerCamera.farClipPlane = RenderSettings.fogEndDistance + 4f;
+            }
 
             if (snow)
             {
                 var emission = snow.emission;
                 emission.rateOverTime = Mathf.Lerp(calmSnowRate, stormSnowRate, Intensity);
+                var vel = snow.velocityOverLifetime;
+                float drift = Mathf.Lerp(windDrift.x, windDrift.y, Intensity);
+                vel.x = new ParticleSystem.MinMaxCurve(drift * 0.5f, drift * 1.3f);
             }
             if (wind) wind.volume = Mathf.Lerp(0.15f, 0.9f, Mathf.Max(Intensity, CurrentPhase == Phase.Warning ? 0.45f : 0f));
             if (sun) sun.intensity = Mathf.Lerp(m_SunBase, m_SunBase * 0.35f, Intensity);

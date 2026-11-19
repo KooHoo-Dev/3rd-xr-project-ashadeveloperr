@@ -33,6 +33,17 @@ namespace Untrodden.EditorTools
             var villageEye = goal + new Vector3(0f, 0f, -26f);
             villageEye.y = Terrain.activeTerrain.SampleHeight(villageEye) + Terrain.activeTerrain.transform.position.y + 1.7f;
             Shot(cam, "04_village", villageEye, goal + Vector3.up * 2f);
+            var bridge = GameObject.Find("Bridge_0").transform;
+            var bEye = bridge.position - bridge.forward * 16f;
+            bEye.y = Terrain.activeTerrain.SampleHeight(bEye) + Terrain.activeTerrain.transform.position.y + 1.7f;
+            Shot(cam, "06_trail_bridge", bEye, bridge.position + Vector3.up * 0.8f);
+            var sh = GameObject.Find("ShelterZone_2").transform.position;
+            Shot(cam, "07_shelter_branch", sh + new Vector3(-6f, 1.7f, -8f), sh + Vector3.up * 1.5f);
+            Shot(cam, "08_overview_high", new Vector3(120f, 160f, 150f), new Vector3(120f, 0f, 151f), fogOff: true, far: 600f);
+            Shot(cam, "09_trail_from_above", start + new Vector3(0f, 45f, 30f), start + new Vector3(0f, 0f, 31f), fogOff: true, far: 300f);
+            var tz = new Vector3(start.x - 2f, 0f, start.z + 14f);
+            tz.y = Terrain.activeTerrain.SampleHeight(tz) + Terrain.activeTerrain.transform.position.y + 1.7f;
+            Shot(cam, "10_trail_walk", tz, tz + new Vector3(4f, -0.6f, 20f));
             Shot(cam, "05_overview", new Vector3(120f, 90f, -20f), new Vector3(120f, 0f, 160f), fogOff: true, far: 600f);
 
             Object.DestroyImmediate(go);
