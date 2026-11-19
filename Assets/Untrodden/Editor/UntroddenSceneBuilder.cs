@@ -45,7 +45,7 @@ namespace Untrodden.EditorTools
         static Terrain s_Terrain;
         static TMP_FontAsset s_Font;
         static Sprite s_White, s_Vignette;
-        static Material s_SnowMat, s_SparkMat, s_WoodMat, s_DarkMat, s_RedMat, s_IvoryMat;
+        static Material s_SnowMat, s_SparkMat, s_WoodMat, s_DarkMat, s_RedMat, s_IvoryMat, s_WindowMat;
         static readonly List<(Vector2 c, float r, float h)> s_Flats = new();
         static System.Random s_Rng;
 
@@ -390,21 +390,15 @@ namespace Untrodden.EditorTools
         {
             var root = new GameObject("Village").transform;
             root.SetParent(parent);
-            var houses = Prefabs("SM_Gen_Bld_Background_01", "SM_Gen_Bld_Background_02", "SM_Gen_Bld_Background_03",
-                "SM_Gen_Bld_Background_04", "SM_Gen_Bld_Background_05", "SM_Gen_Bld_Background_06", "SM_Gen_Bld_Background_07");
+            // 임시 통나무집 (팩에 어울리는 시골집 모델이 없어 기본 도형으로 제작)
             var c3 = Ground(center);
             int n = 0;
             for (float a = 25f; a <= 335f; a += 38f)
             {
                 if (a > 140f && a < 220f) continue; // 남쪽(플레이어가 오는 방향)은 비워 둔다
                 var dir = new Vector3(Mathf.Sin(a * Mathf.Deg2Rad), 0f, Mathf.Cos(a * Mathf.Deg2Rad));
-                var p = new Vector2(center.x + dir.x * 17f, center.y + dir.z * 17f);
-                if (houses.Count == 0) break;
-                var h = Place(houses[n % houses.Count], root, Ground(p), 0f, 1f);
-                h.transform.rotation = Quaternion.LookRotation(-dir, Vector3.up);
-                FitToSize(h, 11f);
-                EnsureMeshColliders(h);
-                n++;
+                var p = new Vector2(center.x + dir.x * 16f, center.y + dir.z * 16f);
+                BuildCabin(root, Ground(p) + Vector3.down * 0.2f, -dir, Rand(0.9f, 1.15f), n++);
             }
 
             // 마을 불빛: 횃불 기둥 + 따뜻한 점광원
@@ -440,6 +434,43 @@ namespace Untrodden.EditorTools
             crackle.maxDistance = 60f;
 
             MarkStatic(root.gameObject);
+        }
+
+        static void BuildCabin(Transform parent, Vector3 pos, Vector3 facing, float scale, int index)
+        {
+            var cabin = new GameObject($"Cabin_{index}").transform;
+            cabin.SetParent(parent);
+            cabin.SetPositionAndRotation(pos, Quaternion.LookRotation(facing, Vector3.up));
+            cabin.localScale = Vector3.one * scale;
+
+            Box(cabin, "Body", new Vector3(0f, 1.6f, 0f), new Vector3(5f, 3.2f, 4f), Vector3.zero, s_WoodMat, true);
+            // 박공지붕: 기울인 판 두 장 + 눈 덮인 윗면
+            Box(cabin, "RoofL", new Vector3(-1.35f, 3.85f, 0f), new Vector3(3.2f, 0.18f, 4.6f), new Vector3(0f, 0f, 35f), s_DarkMat, false);
+            Box(cabin, "RoofR", new Vector3(1.35f, 3.85f, 0f), new Vector3(3.2f, 0.18f, 4.6f), new Vector3(0f, 0f, -35f), s_DarkMat, false);
+            Box(cabin, "SnowL", new Vector3(-1.32f, 3.97f, 0f), new Vector3(3.1f, 0.08f, 4.5f), new Vector3(0f, 0f, 35f), s_IvoryMat, false);
+            Box(cabin, "SnowR", new Vector3(1.32f, 3.97f, 0f), new Vector3(3.1f, 0.08f, 4.5f), new Vector3(0f, 0f, -35f), s_IvoryMat, false);
+            Box(cabin, "Gable", new Vector3(0f, 3.6f, 0f), new Vector3(1.6f, 0.9f, 3.9f), Vector3.zero, s_WoodMat, false);
+            // 앞면: 문과 불 켜진 창문
+            Box(cabin, "Door", new Vector3(0f, 1f, 2.01f), new Vector3(1f, 2f, 0.06f), Vector3.zero, s_DarkMat, false);
+            Box(cabin, "WindowL", new Vector3(-1.6f, 1.8f, 2.01f), new Vector3(0.9f, 0.7f, 0.05f), Vector3.zero, s_WindowMat, false);
+            Box(cabin, "WindowR", new Vector3(1.6f, 1.8f, 2.01f), new Vector3(0.9f, 0.7f, 0.05f), Vector3.zero, s_WindowMat, false);
+            Box(cabin, "WindowSide", new Vector3(2.51f, 1.8f, 0f), new Vector3(0.05f, 0.7f, 0.9f), Vector3.zero, s_WindowMat, false);
+            Box(cabin, "Chimney", new Vector3(1.4f, 4.4f, -0.8f), new Vector3(0.5f, 1.4f, 0.5f), Vector3.zero, s_DarkMat, false);
+            MarkStatic(cabin.gameObject);
+        }
+
+        static void Box(Transform parent, string name, Vector3 localPos, Vector3 size, Vector3 euler, Material mat, bool keepCollider)
+        {
+            var b = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            b.name = name;
+            if (!keepCollider) Object.DestroyImmediate(b.GetComponent<Collider>());
+            b.transform.SetParent(parent, false);
+            b.transform.localPosition = localPos;
+            b.transform.localRotation = Quaternion.Euler(euler);
+            b.transform.localScale = size;
+            var r = b.GetComponent<Renderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
         }
 
         // ───────────────────────── 모닥불 자리 ─────────────────────────
@@ -979,6 +1010,11 @@ namespace Untrodden.EditorTools
             s_DarkMat = LitMaterial("Dark", new Color(0.15f, 0.15f, 0.17f));
             s_RedMat = LitMaterial("Red", new Color(0.85f, 0.15f, 0.12f));
             s_IvoryMat = LitMaterial("Ivory", new Color(0.92f, 0.88f, 0.78f));
+
+            // 불 켜진 창문: 안개 속에서도 보이도록 Unlit
+            s_WindowMat = new Material(Shader.Find("Universal Render Pipeline/Unlit")) { name = "Window" };
+            s_WindowMat.SetColor("_BaseColor", new Color(1f, 0.78f, 0.38f));
+            CreateOrReplace(s_WindowMat, $"{GenDir}/M_Window.mat");
         }
 
         static Sprite SpritePng(string name, int size, System.Func<float, float, Color> fn)
@@ -1044,7 +1080,10 @@ namespace Untrodden.EditorTools
                 float u = x / (float)size * Mathf.PI * 2f, v = y / (float)size * Mathf.PI * 2f;
                 float n = Mathf.PerlinNoise(ox + Mathf.Cos(u) * 1.5f + Mathf.Sin(v) * 1.5f, oy + Mathf.Sin(u) * 1.5f + Mathf.Cos(v) * 1.5f) * 0.6f
                         + Mathf.PerlinNoise(ox + Mathf.Cos(u) * 6f + Mathf.Sin(v) * 6f, oy + Mathf.Sin(u) * 6f + Mathf.Cos(v) * 6f) * 0.4f;
-                tex.SetPixel(x, y, Color.Lerp(a, b, n));
+                // URP 지형은 알파를 매끄러움으로 쓰므로 낮게 둬서 눈이 번들거리지 않게 한다
+                var c = Color.Lerp(a, b, n);
+                c.a = 0.12f;
+                tex.SetPixel(x, y, c);
             }
             tex.Apply(true);
             return tex;
