@@ -164,7 +164,7 @@ namespace Untrodden
 
         void ReadPole(SkiPole pole, ref float push, ref bool pushing, ref bool dragging)
         {
-            if (pole == null || !pole.InContact || !pole.isActiveAndEnabled) return;
+            if (pole == null || !pole.Equipped || !pole.InContact || !pole.isActiveAndEnabled) return;
             var v = pole.LocalHandVelocity;
             float back = -v.z;
             if (back > pushThreshold)

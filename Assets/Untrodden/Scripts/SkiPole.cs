@@ -5,6 +5,7 @@ namespace Untrodden
     /// <summary>
     /// 컨트롤러에 붙은 스키 폴. 폴 끝이 눈에 닿았는지, 손이 몸 기준으로 어떻게 움직이는지 계산한다.
     /// 컨트롤러를 쥐면 폴이 새끼손가락 쪽(컨트롤러 -forward)으로 뻗어 나간다.
+    /// 출발 지점 거치대에서 폴을 잡기 전에는 보이지 않고 동작하지 않는다(<see cref="PoleRackItem"/>).
     /// </summary>
     public class SkiPole : MonoBehaviour
     {
@@ -15,6 +16,20 @@ namespace Untrodden
         [Tooltip("폴 끝이 지면에서 이 높이 이내면 닿은 것으로 본다")]
         public float contactTolerance = 0.12f;
         public Transform tipMarker;
+        [Tooltip("처음부터 장착된 상태로 시작(테스트용)")]
+        public bool startEquipped;
+
+        static readonly System.Collections.Generic.List<SkiPole> s_All = new();
+        public static bool BothEquipped
+        {
+            get
+            {
+                int n = 0;
+                foreach (var p in s_All) if (p.Equipped) n++;
+                return n >= 2;
+            }
+        }
+        public bool Equipped { get; private set; }
 
         /// <summary>폴 끝이 눈에 닿아 있는지.</summary>
         public bool InContact { get; private set; }
@@ -28,8 +43,31 @@ namespace Untrodden
 
         public void Init(Transform rig) => m_Rig = rig;
 
+        void Awake()
+        {
+            SetVisible(startEquipped);
+            Equipped = startEquipped;
+        }
+
+        void OnEnable() => s_All.Add(this);
+        void OnDisable() => s_All.Remove(this);
+
+        public void Equip()
+        {
+            if (Equipped) return;
+            Equipped = true;
+            SetVisible(true);
+            m_HasLast = false;
+        }
+
+        void SetVisible(bool visible)
+        {
+            foreach (var r in GetComponentsInChildren<Renderer>(true)) r.enabled = visible;
+        }
+
         void LateUpdate()
         {
+            if (!Equipped) { InContact = false; return; }
             // 폴 방향: 손잡이(컨트롤러 위치)에서 컨트롤러 -forward 쪽으로 length만큼
             TipPosition = transform.position + transform.forward * length;
 

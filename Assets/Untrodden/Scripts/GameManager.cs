@@ -88,7 +88,9 @@ namespace Untrodden
             DistanceWalked = 0f;
             m_LastHeadPos = m_Head.position;
             SetState(GameState.Playing);
-            Say("양손 폴을 눈에 대고 뒤로 밀어 출발하세요!");
+            Say(SkiPole.BothEquipped
+                ? "양손 폴을 눈에 대고 뒤로 밀어 출발하세요!"
+                : "앞의 거치대에서 그립 버튼으로 폴 두 개를 잡으세요.");
         }
 
         public void Restart()

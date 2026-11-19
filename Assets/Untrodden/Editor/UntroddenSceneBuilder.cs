@@ -103,6 +103,7 @@ namespace Untrodden.EditorTools
             var rig = BuildRig(start);
             var cam = rig.Camera;
             BuildSystems(rig, cam, startPoint, goalPoint, start, gates);
+            BuildPoleRack(gameplay, start);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
@@ -401,7 +402,7 @@ namespace Untrodden.EditorTools
             // 이동 방식: 스키(폴) + 멈췄을 때만 왼쪽 스틱 걷기·오른쪽 스틱 회전. 순간이동은 쓰지 않는다.
             ConfigureLocomotion(go);
             var move = go.GetComponentInChildren<ContinuousMoveProvider>(true);
-            var turn = go.GetComponentInChildren<ContinuousTurnProvider>(true);
+            var turn = go.GetComponentInChildren<SnapTurnProvider>(true);
             if (move != null)
             {
                 move.moveSpeed = 1.3f; // 스키 신고 걷기
@@ -421,7 +422,7 @@ namespace Untrodden.EditorTools
             ski.windAudio = AudioObject("SkiWind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0f);
             ski.crashAudio = AudioObject("CrashThud", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Knock, false, 0f, 0.9f);
 
-            // 스키·걷기·회전 중에만 비네팅
+            // 스키·걷기 중에만 비네팅 (스냅 회전은 순간적이라 비네팅 불필요)
             var vigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(VignettePrefab);
             if (vigPrefab != null)
             {
@@ -434,8 +435,6 @@ namespace Untrodden.EditorTools
                     ctrl.locomotionVignetteProviders.Clear();
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = ski, enabled = true });
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = move, enabled = true });
-                    if (turn != null)
-                        ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = turn, enabled = true });
                     EditorUtility.SetDirty(ctrl);
                 }
             }
@@ -461,7 +460,7 @@ namespace Untrodden.EditorTools
                 so.FindProperty("m_TeleportMode").objectReferenceValue = null;
                 so.FindProperty("m_TeleportModeCancel").objectReferenceValue = null;
                 so.FindProperty("m_TeleportInteractor").objectReferenceValue = null;
-                so.FindProperty("m_SmoothTurnEnabled").boolValue = true;
+                so.FindProperty("m_SmoothTurnEnabled").boolValue = false; // 멈췄을 때 회전은 스냅 회전(멀미 방지)
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
 
