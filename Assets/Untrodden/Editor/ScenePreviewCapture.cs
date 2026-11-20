@@ -11,36 +11,61 @@ namespace Untrodden.EditorTools
         [MenuItem("Untrodden/Capture Preview Shots")]
         public static void Capture()
         {
-            EditorSceneManager.OpenScene("Assets/Untrodden/Scenes/Untrodden.unity");
             Directory.CreateDirectory("Builds/Preview");
+            var scenes = EditorBuildSettings.scenes;
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                EditorSceneManager.OpenScene(scenes[i].path);
+                string tag = $"S{i + 1}";
 
-            var startT = GameObject.Find("StartPoint").transform;
-            var start = startT.position;
-            var fire0 = GameObject.Find("CampfireSite_0").transform.position;
-            var goal = GameObject.Find("GoalPoint").transform.position;
-            var gate3 = GameObject.Find("Gate_03").transform;
+                var startT = GameObject.Find("StartPoint").transform;
+                var start = startT.position;
 
-            var go = new GameObject("PreviewCam");
-            var cam = go.AddComponent<Camera>();
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = RenderSettings.fogColor;
-            cam.fieldOfView = 90f;
-            cam.nearClipPlane = 0.02f;
+                var go = new GameObject("PreviewCam");
+                var cam = go.AddComponent<Camera>();
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = RenderSettings.fogColor;
+                cam.fieldOfView = 90f;
+                cam.nearClipPlane = 0.02f;
 
-            Shot(cam, "01_start_view", start + Vector3.up * 1.6f, start + Vector3.up * 1.2f + startT.forward * 10f);
-            Shot(cam, "02_slope_down", start + Vector3.up * 1.6f + startT.forward * 8f, start + startT.forward * 40f + Vector3.down * 8f);
-            var gEye = gate3.position - gate3.forward * 14f;
-            gEye.y = Terrain.activeTerrain.SampleHeight(gEye) + Terrain.activeTerrain.transform.position.y + 1.6f;
-            Shot(cam, "03_gate", gEye, gate3.position + Vector3.up * 0.8f);
-            Shot(cam, "04_campfire", fire0 + new Vector3(0f, 2f, -6f), fire0);
-            var fEye = goal - Vector3.forward * 18f;
-            fEye.y = Terrain.activeTerrain.SampleHeight(fEye) + Terrain.activeTerrain.transform.position.y + 1.6f;
-            Shot(cam, "05_finish", fEye, goal + Vector3.up * 2f + Vector3.forward * 10f);
-            Shot(cam, "06_overview_side", new Vector3(-80f, 150f, 200f), new Vector3(120f, 30f, 200f), fogOff: true, far: 700f);
-            Shot(cam, "07_overview_top", new Vector3(120f, 260f, 200f), new Vector3(120f, 0f, 201f), fogOff: true, far: 700f);
+                Shot(cam, $"{tag}_01_start_view", start + Vector3.up * 1.6f, start + Vector3.up * 1.2f + startT.forward * 10f);
 
-            Object.DestroyImmediate(go);
+                // 스테이지 특징: 점프대 > 자갈 > 코스 위 나무 순으로 찾아 그 앞에서 찍는다
+                Transform feature = null;
+                foreach (var name in new[] { "Ramp_1", "GravelPatch_02", "CourseTrees", "Gate_03" })
+                {
+                    var f = GameObject.Find(name);
+                    if (f != null) { feature = f.transform; break; }
+                }
+                if (feature != null)
+                {
+                    var fp = feature.name == "CourseTrees" && feature.childCount > 10 ? feature.GetChild(10).position : FeaturePoint(feature);
+                    var eye = fp - Vector3.forward * 16f;
+                    eye.y = GroundY(eye) + 1.6f;
+                    Shot(cam, $"{tag}_02_feature", eye, fp + Vector3.up * 0.5f);
+                    var side = fp + new Vector3(14f, 0f, 2f);
+                    side.y = GroundY(side) + 3f;
+                    Shot(cam, $"{tag}_03_feature_side", side, fp, fogOff: true, far: 120f);
+                }
+                Shot(cam, $"{tag}_04_overview_top", new Vector3(120f, 260f, 200f), new Vector3(120f, 0f, 201f), fogOff: true, far: 700f);
+                Object.DestroyImmediate(go);
+            }
             Debug.Log("[Preview] done");
+        }
+
+        static Vector3 FeaturePoint(Transform t)
+        {
+            var r = t.GetComponentInChildren<Renderer>();
+            return r != null ? r.bounds.center : t.position;
+        }
+
+        static float GroundY(Vector3 p) => Terrain.activeTerrain.SampleHeight(p) + Terrain.activeTerrain.transform.position.y;
+
+        /// <summary>배치 모드용: 씬을 만들고 미리보기를 찍는다.</summary>
+        public static void BuildAndCapture()
+        {
+            UntroddenSceneBuilder.Build();
+            Capture();
         }
 
         static void Shot(Camera cam, string name, Vector3 pos, Vector3 lookAt, bool fogOff = false, float far = 80f)

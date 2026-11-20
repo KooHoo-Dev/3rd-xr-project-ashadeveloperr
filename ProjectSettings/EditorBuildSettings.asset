@@ -6,8 +6,17 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Untrodden/Scenes/Untrodden.unity
-    guid: 7beaf21402759b545961d0e23e70127d
+    path: Assets/Untrodden/Scenes/Stage1_Tutorial.unity
+    guid: 6b52a2ed392fd384b8b59046f32237fb
+  - enabled: 1
+    path: Assets/Untrodden/Scenes/Stage2_Obstacles.unity
+    guid: 2e4557aff44ff0d4aafcd0984a694b8b
+  - enabled: 1
+    path: Assets/Untrodden/Scenes/Stage3_Glide.unity
+    guid: 7f4aaec172c1a6f41b1f3f1e32520949
+  - enabled: 1
+    path: Assets/Untrodden/Scenes/Stage4_Forest.unity
+    guid: ad60676f56bcec440babb3c55d5e7056
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
     com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: 908d62378b8205449861e5838a18a596, type: 2}

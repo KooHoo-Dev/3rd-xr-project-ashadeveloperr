@@ -7,21 +7,20 @@ using UnityEngine.Rendering;
 namespace Untrodden.EditorTools
 {
     /// <summary>
-    /// 스키 산: 남쪽 정상에서 북쪽 바닷가 마을로 내려가는 굽이진 메인 슬로프,
+    /// 스키 산: 남쪽 정상에서 북쪽 바닷가 마을로 내려가는 굽이진 메인 슬로프(스테이지마다 굽이가 다름),
     /// 슬로프 양옆의 빽빽한 숲, 깃발 관문, 출발·결승 아치.
     /// </summary>
     public static partial class UntroddenSceneBuilder
     {
         const float StartZ = 26f, FinishZ = 360f, VillageZ = 384f;
-        static readonly float[] FireZ = { 140f, 255f };
 
         // ───────────────────────── 슬로프 모양 ─────────────────────────
 
-        /// <summary>슬로프 중심선.</summary>
-        static float RunX(float z) => 120f + 30f * Mathf.Sin(z / 62f) + 9f * Mathf.Sin(z / 23f + 1.3f);
+        /// <summary>슬로프 중심선(스테이지마다 굽이가 다르다).</summary>
+        static float RunX(float z) => 120f + s_Stage.ampA * Mathf.Sin(z / s_Stage.freqA) + s_Stage.ampB * Mathf.Sin(z / s_Stage.freqB + s_Stage.phaseB);
 
         /// <summary>슬로프 반폭(나무가 없는 구간).</summary>
-        static float RunHalfWidth(float z) => 10f + 2.5f * Mathf.Sin(z / 41f + 0.7f);
+        static float RunHalfWidth(float z) => s_Stage.halfWidth + s_Stage.halfWidthVar * Mathf.Sin(z / 41f + 0.7f);
 
         static float RunEdge(float x, float z) => Mathf.Abs(x - RunX(z)) - RunHalfWidth(z);
 
@@ -33,13 +32,11 @@ namespace Untrodden.EditorTools
 
         static float[] s_Profile;
 
-        /// <summary>z에 따른 경사각(도). 출발 평지, 모닥불 앞 완만한 턱, 결승 뒤 평지.</summary>
+        /// <summary>z에 따른 경사각(도). 출발 평지, 결승 뒤 평지.</summary>
         static float SlopeDeg(float z)
         {
             float s = 17f + 4f * Mathf.Sin(z / 37f + 0.5f);
             s = Mathf.Lerp(3f, s, SmoothStep(StartZ + 2f, StartZ + 16f, z));
-            foreach (var fz in FireZ)
-                s = Mathf.Lerp(s, 5f, SmoothStep(18f, 8f, Mathf.Abs(z - fz)));
             s = Mathf.Lerp(s, 2f, SmoothStep(FinishZ + 4f, FinishZ + 16f, z));
             if (z > SeaZ - 12f) s = Mathf.Lerp(s, 9f, SmoothStep(SeaZ - 12f, SeaZ - 6f, z));
             return s;
@@ -80,7 +77,7 @@ namespace Untrodden.EditorTools
 
         static float Height(float x, float z)
         {
-            float h = HeightNoFlat(x, z);
+            float h = HeightNoFlat(x, z) + DipOffset(x, z);
             foreach (var (c, r, target) in s_Flats)
             {
                 float d = Vector2.Distance(c, new Vector2(x, z));
@@ -96,31 +93,21 @@ namespace Untrodden.EditorTools
         static readonly List<(Vector2 c, float r)> s_Clearings = new();
         static readonly List<(Vector2 pos, Vector2 dir, int side)> s_Gates = new();
 
-        static Vector2[] FirePositions()
-        {
-            var list = new Vector2[FireZ.Length];
-            for (int i = 0; i < FireZ.Length; i++)
-            {
-                float side = i % 2 == 0 ? 1f : -1f;
-                list[i] = new Vector2(RunX(FireZ[i]) + side * (RunHalfWidth(FireZ[i]) + 1.5f), FireZ[i]);
-            }
-            return list;
-        }
-
-        static void PlanCourse(Vector2 start, Vector2[] fires, Vector2 village)
+        /// <summary>관문 → 점프대 → 장애물 → 코스 위 나무 순서로 정한다(뒤에 정하는 것이 앞의 것을 피한다).</summary>
+        static void PlanCourse(Vector2 start, Vector2 village)
         {
             s_Clearings.Clear();
             s_Gates.Clear();
+            ClearStagePlan();
             s_Clearings.Add((start, 12f));
-            foreach (var f in fires) s_Clearings.Add((f, 7f));
             s_Clearings.Add((village, 30f));
 
+            PlanJumps();
             int side = 1;
-            for (float z = StartZ + 24f; z < FinishZ - 10f; z += 22f)
+            for (float z = StartZ + 24f; z < FinishZ - 10f; z += s_Stage.gateSpacing)
             {
-                bool nearFire = false;
-                foreach (var fz in FireZ) nearFire |= Mathf.Abs(z - fz) < 14f;
-                if (nearFire) continue;
+                // 점프대 앞 접근로와 착지 구간에는 관문을 두지 않는다
+                if (NearJump(z, 24f, 34f)) continue;
                 var c = new Vector2(RunX(z), z);
                 var t = RunTangent(z);
                 var right = new Vector2(t.y, -t.x);
@@ -129,6 +116,8 @@ namespace Untrodden.EditorTools
                 side = -side;
             }
             Debug.Log($"[Untrodden] gates: {s_Gates.Count}");
+            PlanObstacles();
+            PlanCourseTrees();
         }
 
         static float ClearingEdge(Vector2 p)
@@ -251,7 +240,7 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 관문·출발·결승 ─────────────────────────
 
-        static Material s_FlagRed, s_FlagBlue, s_FlagGreen, s_FlagGray, s_SkiMat;
+        static Material s_FlagRed, s_FlagBlue, s_FlagGreen, s_FlagGray, s_SkiMat, s_RampMat;
         static Sprite s_Ring;
 
         static Material UnlitMaterial(string name, Color color)
@@ -271,6 +260,7 @@ namespace Untrodden.EditorTools
             s_FlagGreen = UnlitMaterial("FlagGreen", new Color(0.2f, 0.85f, 0.3f));
             s_FlagGray = UnlitMaterial("FlagGray", new Color(0.45f, 0.45f, 0.48f));
             s_SkiMat = LitMaterial("Ski", new Color(0.12f, 0.32f, 0.85f));
+            s_RampMat = LitMaterial("Ramp", new Color(0.86f, 0.9f, 0.96f));
             s_Ring = SpritePng("Ring", 96, (u, v) =>
             {
                 float d = Vector2.Distance(new Vector2(u, v), new Vector2(0.5f, 0.5f)) / 0.5f;

@@ -4,10 +4,10 @@ using UnityEngine.InputSystem;
 namespace Untrodden
 {
     /// <summary>
-    /// 왼쪽 컨트롤러 메뉴 버튼을 길게 누르면 마지막 모닥불로 돌아간다(갇혔을 때 탈출용).
-    /// 에디터에서는 R 키로도 동작한다.
+    /// 왼쪽 컨트롤러 메뉴 버튼을 길게 누르면 가장 가까운 코스 위로 돌아간다(갇혔을 때 탈출용).
+    /// 시간은 계속 흐르므로 남용하면 제한시간을 넘긴다. 에디터에서는 R 키로도 동작한다.
     /// </summary>
-    public class ReturnToCampfireInput : MonoBehaviour
+    public class ReturnToCourseInput : MonoBehaviour
     {
         public float holdSeconds = 1.5f;
 
@@ -18,7 +18,7 @@ namespace Untrodden
 
         void OnEnable()
         {
-            m_Action = new InputAction("ReturnToCampfire", InputActionType.Button);
+            m_Action = new InputAction("ReturnToCourse", InputActionType.Button);
             m_Action.AddBinding("<XRController>{LeftHand}/{MenuButton}");
             m_Action.AddBinding("<XRController>{LeftHand}/menuButton");
             m_Action.AddBinding("<XRController>{LeftHand}/menu");
@@ -44,18 +44,18 @@ namespace Untrodden
                 m_Fired = false;
                 return;
             }
-
             if (m_Fired) return; // 손을 뗄 때까지 다시 발동하지 않음
+
             m_Held += Time.deltaTime;
             if (!m_Announced && m_Held > 0.25f)
             {
                 m_Announced = true;
-                gm.Say("계속 누르고 있으면 마지막 모닥불로 돌아가요…");
+                gm.Say("계속 누르고 있으면 코스로 돌아가요…");
             }
             if (m_Held >= holdSeconds)
             {
                 m_Fired = true;
-                gm.ReturnToCheckpoint("마지막 모닥불로 돌아왔어요.");
+                gm.ReturnToCourse("코스로 돌아왔어요.");
             }
         }
     }

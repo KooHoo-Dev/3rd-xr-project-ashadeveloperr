@@ -11,12 +11,20 @@ namespace Untrodden
     public enum GameState { Title, Playing, Result }
 
     /// <summary>
-    /// 게임 흐름(시작 → 플레이 → 결과), 체크포인트, 결과 집계(시간·리스폰·이동 거리)를 관리한다.
+    /// 게임 흐름(시작 → 플레이 → 결과)과 스테이지 이동을 관리한다.
+    /// 스테이지마다 제한시간이 있고, 주행 시간 + 관문 벌점이 제한시간을 넘으면 실패다.
+    /// 부딪히거나 자갈에서 느려지면 그만큼 시간을 잃으므로 결국 실패로 이어진다.
     /// </summary>
     [DefaultExecutionOrder(-100)]
     public class GameManager : MonoBehaviour
     {
         public static GameManager Instance { get; private set; }
+
+        [Header("Stage")]
+        [Tooltip("이 씬의 스테이지 번호(0부터). 빌드 설정의 씬 순서와 같다")]
+        public int stageIndex;
+        [Tooltip("제한시간(초). 주행 시간 + 관문 벌점이 이 값을 넘으면 실패")]
+        public float timeLimit = 90f;
 
         [Header("References")]
         public XROrigin rig;
@@ -28,18 +36,21 @@ namespace Untrodden
 
         public GameState State { get; private set; } = GameState.Title;
         public float ElapsedTime { get; private set; }
-        public int RespawnCount { get; private set; }
-        public float DistanceWalked { get; private set; }
-        public Transform Checkpoint { get; private set; }
+        public bool Cleared { get; private set; }
+
+        /// <summary>남은 시간 = 제한시간 − (주행 시간 + 관문 벌점)</summary>
+        public float TimeLeft => timeLimit - ElapsedTime - (CourseTracker.Instance != null ? CourseTracker.Instance.Penalty : 0f);
+        public bool HasNextStage => stageIndex + 1 < Stages.Count;
 
         public event Action<GameState> StateChanged;
         public event Action<string> Notice;
-        /// <summary>리그가 순간 이동했을 때(리스폰·복귀). 위치 기반 판정 초기화용.</summary>
+        /// <summary>리그가 순간 이동했을 때(코스 복귀 등). 위치 기반 판정 초기화용.</summary>
         public event Action Teleported;
 
+        // 다른 스테이지로 넘어갈 때 시작 화면을 건너뛰고 바로 출발할지
+        static bool s_AutoStart;
+
         Transform m_Head;
-        Vector3 m_LastHeadPos;
-        bool m_SkipDistanceFrame;
 
         public Transform Head => m_Head;
 
@@ -48,21 +59,29 @@ namespace Untrodden
             Instance = this;
             if (rig == null) rig = FindFirstObjectByType<XROrigin>();
             m_Head = rig != null && rig.Camera != null ? rig.Camera.transform : Camera.main.transform;
-            Checkpoint = startPoint;
         }
 
         void Start()
         {
-            if (titleCanvas) titleCanvas.SetActive(true);
             if (resultScreen) resultScreen.gameObject.SetActive(false);
-            m_LastHeadPos = m_Head.position;
             SetState(GameState.Title);
-            RequestFaceStart("시작");
 
             // 헤드셋에서 '화면 재조정'을 하면 시작 화면 앞으로 다시 맞춘다
             var subs = new List<XRInputSubsystem>();
             SubsystemManager.GetSubsystems(subs);
             foreach (var s in subs) s.trackingOriginUpdated += OnTrackingOriginUpdated;
+
+            if (s_AutoStart)
+            {
+                s_AutoStart = false;
+                if (titleCanvas) titleCanvas.SetActive(false);
+                StartCoroutine(AutoStartWhenTracked());
+            }
+            else
+            {
+                if (titleCanvas) titleCanvas.SetActive(true);
+                RequestFaceStart("시작");
+            }
         }
 
         void OnDestroy()
@@ -107,10 +126,8 @@ namespace Untrodden
         void OnApplicationPause(bool paused) { if (!paused) RequestFaceStart("일시정지 해제"); }
 
         // ── 시작 방향 맞추기 ──
-        // 방향은 '맞추는 그 순간' 고개가 향한 쪽을 기준으로 정해진다. 앱을 켠 순간 한 번만 맞추면,
-        // 그때 헤드셋이 책상 위에 있었거나 시스템 팝업을 보고 있었을 경우 실제로 쓰고 나서는 엉뚱한 쪽을 보게 된다.
-        // 그래서 시작 화면에 있는 동안은 (1) 포커스 복귀·화면 재조정 때마다 다시 맞추고
-        // (2) 시작 화면이 시야 뒤쪽에 1.5초 넘게 있으면 다시 맞춘다.
+        // 출발할 때 슬로프를 보게 하는 건 StartGame(시작 버튼)이 확실히 맡는다.
+        // 여기서는 시작 화면에 있는 동안 배경 풍경도 대체로 정면이 되도록 보조로 맞춘다.
         const float FaceAwayAngle = 100f;
         const float FaceAwaySeconds = 1.5f;
         Coroutine m_FaceRoutine;
@@ -123,11 +140,7 @@ namespace Untrodden
             m_FaceRoutine = StartCoroutine(FaceStartWhenTracked(reason));
         }
 
-        /// <summary>
-        /// 헤드셋 트래킹이 안정되면 플레이어를 출발 지점에 세우고 슬로프 아래(시작 화면 쪽)를 보게 한다.
-        /// 실제 방에서 어느 쪽을 보고 있든 고개를 돌리지 않아도 된다.
-        /// </summary>
-        IEnumerator FaceStartWhenTracked(string reason)
+        IEnumerator WaitForTracking()
         {
             float wait = 0f;
             while (m_Head.localPosition == Vector3.zero && wait < 3f)
@@ -137,12 +150,23 @@ namespace Untrodden
             }
             // 포커스가 막 돌아온 직후에는 자세 값이 아직 이전 값일 수 있어 잠깐 기다린다
             yield return new WaitForSecondsRealtime(0.3f);
+        }
+
+        IEnumerator FaceStartWhenTracked(string reason)
+        {
+            yield return WaitForTracking();
             m_FaceRoutine = null;
             if (State != GameState.Title) yield break;
             ApplyEyeHeight();
             Teleport(startPoint);
             m_FaceAwayTime = 0f;
             Debug.Log($"[Untrodden] 시작 방향 맞춤 ({reason})");
+        }
+
+        IEnumerator AutoStartWhenTracked()
+        {
+            yield return WaitForTracking();
+            StartGame();
         }
 
         /// <summary>시작 화면에서 출발 방향을 오래 등지고 있으면 다시 맞춘다(안전망).</summary>
@@ -163,21 +187,17 @@ namespace Untrodden
 
             ElapsedTime += Time.deltaTime;
 
-            var pos = m_Head.position;
-            var delta = pos - m_LastHeadPos;
-            delta.y = 0f;
-            if (!m_SkipDistanceFrame && delta.magnitude < 30f)
-                DistanceWalked += delta.magnitude;
-            m_SkipDistanceFrame = false;
-            m_LastHeadPos = pos;
-
             if (goalPoint != null)
             {
-                var toGoal = goalPoint.position - pos;
+                var toGoal = goalPoint.position - m_Head.position;
                 toGoal.y = 0f;
                 if (toGoal.magnitude < goalRadius)
-                    Finish();
+                {
+                    Finish(TimeLeft >= 0f);
+                    return;
+                }
             }
+            if (TimeLeft <= 0f) Finish(false);
         }
 
         public void StartGame()
@@ -190,56 +210,62 @@ namespace Untrodden
             if (m_FaceRoutine != null) { StopCoroutine(m_FaceRoutine); m_FaceRoutine = null; }
             ApplyEyeHeight();
             Teleport(startPoint);
-            Debug.Log("[Untrodden] 시작 방향 맞춤 (시작 버튼)");
+            Debug.Log($"[Untrodden] 스테이지 {stageIndex + 1} 시작, 제한시간 {timeLimit:0}초 (시작 방향 맞춤)");
             ElapsedTime = 0f;
-            RespawnCount = 0;
-            DistanceWalked = 0f;
-            m_LastHeadPos = m_Head.position;
             SetState(GameState.Playing);
-            Say("손을 내려 폴 끝을 눈에 대면 손이 톡 떨려요. 닿은 채로 양손을 뒤로 쭉 밀어 출발하세요!");
+            Say($"{Stages.Titles[stageIndex]} · 제한시간 {timeLimit:0}초\n폴 끝을 눈에 대고 양손을 뒤로 쭉 밀어 출발하세요!");
         }
 
-        public void Restart()
+        // ── 스테이지 이동 ──
+
+        /// <summary>스테이지 씬을 연다. autoStart면 시작 화면 없이 바로 출발한다.</summary>
+        public static void LoadStage(int index, bool autoStart)
         {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            index = Mathf.Clamp(index, 0, Stages.Count - 1);
+            s_AutoStart = autoStart;
+            SceneManager.LoadScene(index);
         }
 
-        public void SetCheckpoint(Transform point, bool silent = false)
+        /// <summary>시작 화면의 스테이지 버튼. 지금 씬이면 바로 출발, 다른 스테이지면 그 씬을 열고 바로 출발.</summary>
+        public void SelectStage(int index)
         {
-            if (point == null || point == Checkpoint) return;
-            Checkpoint = point;
-            if (!silent) Say("체크포인트 저장! 쓰러지면 여기서 다시 시작해요.");
+            if (index == stageIndex) StartGame();
+            else LoadStage(index, true);
         }
 
-        public void Respawn()
-        {
-            RespawnCount++;
-            Teleport(Checkpoint != null ? Checkpoint : startPoint);
-            Say("쓰러졌어요. 마지막 모닥불에서 다시 출발합니다.");
-        }
+        public void Restart() => LoadStage(stageIndex, true);
+        public void NextStage() => LoadStage(stageIndex + 1, true);
+        public void BackToTitle() => LoadStage(stageIndex, false);
 
-        /// <summary>쓰러진 게 아니라 길을 잃었을 때: 리스폰 횟수는 세지 않고 마지막 체크포인트로 옮긴다.</summary>
-        public void ReturnToCheckpoint(string message)
+        /// <summary>길을 잃었을 때: 가장 가까운 코스 위로 돌려보낸다. 시간은 계속 흐른다.</summary>
+        public void ReturnToCourse(string message)
         {
-            Teleport(Checkpoint != null ? Checkpoint : startPoint);
+            var path = CoursePath.Instance;
+            if (path != null && path.TryGetReturnPose(m_Head.position, out var pos, out var yaw))
+                Teleport(pos, yaw);
+            else
+                Teleport(startPoint);
             Say(message);
         }
 
         public void Say(string message) => Notice?.Invoke(message);
 
-        void Finish()
+        void Finish(bool cleared)
         {
+            Cleared = cleared;
             SetState(GameState.Result);
+            Debug.Log($"[Untrodden] 스테이지 {stageIndex + 1} {(cleared ? "클리어" : "실패")} · 주행 {ElapsedTime:0.0}초 · 남은 시간 {TimeLeft:0.0}초");
             if (resultScreen)
             {
                 var course = CourseTracker.Instance;
                 var ski = SkiController.Instance;
-                resultScreen.Show(ElapsedTime,
+                resultScreen.Show(cleared, stageIndex, ElapsedTime,
                     course != null ? course.Penalty : 0f,
+                    timeLimit,
                     course != null ? course.Passed : 0,
                     course != null ? course.Total : 0,
                     ski != null ? ski.CrashCount : 0,
-                    RespawnCount);
+                    HasNextStage);
             }
         }
 
@@ -249,26 +275,30 @@ namespace Untrodden
             StateChanged?.Invoke(state);
         }
 
-        /// <summary>리그를 지정 위치로 옮긴다. CharacterController가 위치를 되돌리지 않도록 잠시 끈다.</summary>
         public void Teleport(Transform target)
         {
-            if (rig == null || target == null) return;
+            if (target == null) return;
+            Teleport(target.position, target.eulerAngles.y);
+        }
+
+        /// <summary>리그를 지정 위치로 옮기고 머리가 yaw 방향을 보게 한다. CharacterController가 위치를 되돌리지 않도록 잠시 끈다.</summary>
+        public void Teleport(Vector3 position, float yaw)
+        {
+            if (rig == null) return;
             var cc = rig.GetComponent<CharacterController>();
             if (cc) cc.enabled = false;
 
             var headOffset = m_Head.position - rig.transform.position;
             headOffset.y = 0f;
-            rig.transform.position = target.position - headOffset;
+            rig.transform.position = position - headOffset;
 
-            var yaw = target.eulerAngles.y - m_Head.eulerAngles.y;
-            rig.transform.RotateAround(target.position, Vector3.up, yaw);
+            float turn = yaw - m_Head.eulerAngles.y;
+            rig.transform.RotateAround(position, Vector3.up, turn);
 
             Physics.SyncTransforms();
             if (cc) cc.enabled = true;
             SkiController.Instance?.Stop();
             Teleported?.Invoke();
-            m_SkipDistanceFrame = true;
-            m_LastHeadPos = m_Head.position;
         }
     }
 }

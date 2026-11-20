@@ -3,18 +3,23 @@ using UnityEngine;
 namespace Untrodden
 {
     /// <summary>
-    /// 랜덤 타이머로 눈보라가 찾아온다. 30초 전에 예고(바람 소리 증가·하늘 어두워짐·손목 알림)하고,
-    /// 눈보라 중에는 체온 감소 배율이 커지고 안개가 짙어진다.
+    /// 눈보라가 예고 없이 들이닥쳤다가 금방 지나간다(짧고 자주). 눈보라 중에는 안개가 짙어져 앞이 잘 안 보이고
+    /// 눈이 옆으로 거세게 날린다. 체력은 없으므로 피해는 '시야'뿐이고, 그만큼 느려지면 제한시간을 잃는다.
     /// </summary>
     public class Blizzard : MonoBehaviour
     {
-        public enum Phase { Calm, Warning, Storm }
+        public enum Phase { Calm, Storm }
 
         public static Blizzard Instance { get; private set; }
 
-        public Vector2 calmDuration = new(35f, 60f);
-        public float warningDuration = 20f;
-        public float stormDuration = 30f;
+        [Tooltip("맑은 시간(초) 범위. 이 사이에서 무작위로 정해진다")]
+        public Vector2 calmDuration = new(12f, 25f);
+        [Tooltip("눈보라가 이어지는 시간(초) 범위")]
+        public Vector2 stormDuration = new(8f, 12f);
+        [Tooltip("눈보라가 들이닥치는 빠르기(초당 강도 변화). 클수록 갑자기 덮친다")]
+        public float onsetSpeed = 0.8f;
+        [Tooltip("눈보라가 걷히는 빠르기(초당 강도 변화)")]
+        public float clearSpeed = 0.35f;
 
         /// <summary>눈 파티클 한 겹. 평소 ↔ 눈보라 사이에서 양과 바람을 보간한다.</summary>
         [System.Serializable]
@@ -44,8 +49,6 @@ namespace Untrodden
         public float PhaseTimeLeft { get; private set; }
         /// <summary>0 = 맑음, 1 = 최대 눈보라. 연출 보간에 쓴다.</summary>
         public float Intensity { get; private set; }
-        /// <summary>눈보라 피해 강도(0~1). 눈보라 단계에서만 0보다 크다.</summary>
-        public float StormStrength => CurrentPhase == Phase.Storm ? Intensity : 0f;
 
         float m_SunBase;
 
@@ -67,13 +70,8 @@ namespace Untrodden
                 if (PhaseTimeLeft <= 0f) Advance();
             }
 
-            float target = CurrentPhase switch
-            {
-                Phase.Storm => 1f,
-                Phase.Warning => 0.25f * (1f - PhaseTimeLeft / warningDuration),
-                _ => 0f,
-            };
-            Intensity = Mathf.MoveTowards(Intensity, target, Time.deltaTime * 0.15f);
+            bool storm = CurrentPhase == Phase.Storm;
+            Intensity = Mathf.MoveTowards(Intensity, storm ? 1f : 0f, Time.deltaTime * (storm ? onsetSpeed : clearSpeed));
             ApplyAtmosphere();
         }
 
@@ -82,19 +80,14 @@ namespace Untrodden
             switch (CurrentPhase)
             {
                 case Phase.Calm:
-                    CurrentPhase = Phase.Warning;
-                    PhaseTimeLeft = warningDuration;
-                    GameManager.Instance?.Say($"바람이 거세져요. {warningDuration:0}초 뒤 눈보라! 서둘러 내려가세요.");
-                    break;
-                case Phase.Warning:
+                    // 예고 없이 들이닥친다
                     CurrentPhase = Phase.Storm;
-                    PhaseTimeLeft = stormDuration;
-                    GameManager.Instance?.Say("눈보라가 몰아칩니다! 체력이 줄어요.");
+                    PhaseTimeLeft = Random.Range(stormDuration.x, stormDuration.y);
+                    // 알림 문구는 띄우지 않는다: 콕핏 HUD에 '눈보라!'가 표시되고, 짙어지는 안개와 바람 소리로 충분하다
                     break;
                 default:
                     CurrentPhase = Phase.Calm;
                     PhaseTimeLeft = Random.Range(calmDuration.x, calmDuration.y);
-                    GameManager.Instance?.Say("눈보라가 지나갔어요.");
                     break;
             }
         }
@@ -125,7 +118,7 @@ namespace Untrodden
                     vel.x = new ParticleSystem.MinMaxCurve(d * 0.5f, d * 1.3f);
                 }
             }
-            if (wind) wind.volume = Mathf.Lerp(0.15f, 0.9f, Mathf.Max(Intensity, CurrentPhase == Phase.Warning ? 0.45f : 0f));
+            if (wind) wind.volume = Mathf.Lerp(0.15f, 0.9f, Mathf.Max(Intensity, 0f));
             if (sun) sun.intensity = Mathf.Lerp(m_SunBase, m_SunBase * 0.35f, Intensity);
         }
     }

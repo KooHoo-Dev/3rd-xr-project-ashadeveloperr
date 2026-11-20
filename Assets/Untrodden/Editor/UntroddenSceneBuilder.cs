@@ -21,15 +21,15 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 namespace Untrodden.EditorTools
 {
     /// <summary>
-    /// Untrodden 플레이 씬을 코드로 생성한다. (메뉴: Untrodden > Build Scene)
-    /// 남쪽이 높고 북쪽이 바다인 지형, 강, 숲, 모닥불 체크포인트, 바위 그늘, 마을, XR 리그와 UI를 배치한다.
+    /// Untrodden 스테이지 씬 4개를 코드로 생성한다. (메뉴: Untrodden > Build Scene)
+    /// 남쪽이 높고 북쪽이 바다인 지형, 숲, 마을, 스테이지별 요소(바위·자갈·점프대·코스 위 나무), XR 리그와 UI를 배치한다.
     /// 다시 실행하면 씬과 생성 애셋을 새로 만든다.
     /// </summary>
     public static partial class UntroddenSceneBuilder
     {
         const string Root = "Assets/Untrodden";
         const string GenDir = Root + "/Generated";
-        const string ScenePath = Root + "/Scenes/Untrodden.unity";
+        const string OldScenePath = Root + "/Scenes/Untrodden.unity"; // 스테이지로 나누기 전의 단일 씬(삭제 대상)
         const string RigPrefab = "Assets/Samples/XR Interaction Toolkit/3.5.1/Starter Assets/Prefabs/XR Origin (XR Rig).prefab";
         const string VignettePrefab = "Assets/Samples/XR Interaction Toolkit/3.5.1/Starter Assets/TunnelingVignette/TunnelingVignette.prefab";
         const string FontPath = "Assets/99. External Assets/Font/Noto_Sans_KR/NotoSansKR-Regular SDF.asset";
@@ -60,25 +60,44 @@ namespace Untrodden.EditorTools
         public static void Build()
         {
             s_Rng = new System.Random(20261123);
-            s_Flats.Clear();
             EnsureDir(GenDir);
             EnsureDir(Root + "/Scenes");
 
+            // 공유 애셋(재질·텍스처·지형 레이어)은 한 번만 만든다. 스테이지마다 다시 만들면 먼저 만든 씬의 참조가 끊긴다.
             CreateSharedAssets();
+            CreateCourseMaterials();
+            CreateTerrainLayers();
+
+            var scenes = new List<EditorBuildSettingsScene>();
+            for (int i = 0; i < Specs.Length; i++)
+            {
+                BuildStage(i);
+                scenes.Add(new EditorBuildSettingsScene(StageScenePath(i), true));
+            }
+            EditorBuildSettings.scenes = scenes.ToArray();
+            // 스테이지로 나누기 전의 단일 씬과 그 지형 데이터는 지운다
+            foreach (var old in new[] { OldScenePath, GenDir + "/TerrainData.asset" })
+                if (AssetDatabase.LoadAssetAtPath<Object>(old) != null) AssetDatabase.DeleteAsset(old);
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Untrodden] All stages built");
+        }
+
+        static void BuildStage(int index)
+        {
+            s_Stage = Specs[index];
+            s_Rng = new System.Random(s_Stage.seed);
+            s_Flats.Clear();
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // 주요 지점
             BuildProfile();
             var start = new Vector2(RunX(StartZ), StartZ);
-            var fires = FirePositions();
             var village = new Vector2(RunX(VillageZ), VillageZ);
 
             AddFlat(start, 10f);
-            foreach (var f in fires) AddFlat(f, 5f);
             AddFlat(village, 26f);
-            PlanCourse(start, fires, village);
-            CreateCourseMaterials();
+            PlanCourse(start, village);
 
             SetupLighting();
             BuildTerrain();
@@ -94,20 +113,19 @@ namespace Untrodden.EditorTools
             var goalPoint = Marker("GoalPoint", goal, 0f);
 
             var gameplay = new GameObject("Gameplay").transform;
-            for (int i = 0; i < fires.Length; i++)
-                BuildCampfireSite(gameplay, i, fires[i]);
             var gates = BuildGates(gameplay);
+            BuildStageFeatures(gameplay);
             BuildArch(gameplay, "StartArch", StartZ + 11f, "START", s_FlagBlue);
             BuildArch(gameplay, "FinishArch", FinishZ, "FINISH", s_FlagRed);
 
             var rig = BuildRig(start);
             var cam = rig.Camera;
-            BuildSystems(rig, cam, startPoint, goalPoint, start, gates);
+            float limit = StageTimeLimit();
+            BuildSystems(rig, cam, startPoint, goalPoint, start, gates, index, limit);
 
-            EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            AssetDatabase.SaveAssets();
-            Debug.Log("[Untrodden] Scene built: " + ScenePath);
+            var path = StageScenePath(index);
+            EditorSceneManager.SaveScene(scene, path);
+            Debug.Log($"[Untrodden] Stage {index + 1} built: {path} · 코스 {CourseLength():0}m · 제한시간 {limit:0}초");
         }
 
         /// <summary>배치 모드용: 씬을 만들고 바로 APK까지 빌드한다.</summary>
@@ -124,7 +142,7 @@ namespace Untrodden.EditorTools
             var data = new TerrainData { heightmapResolution = HeightRes, alphamapResolution = AlphaRes };
             data.size = new Vector3(SizeX, TerrainHeight, SizeZ);
             // 에셋을 먼저 만든 뒤 데이터를 채워야 스플랫(알파맵) 텍스처가 함께 저장된다
-            CreateOrReplace(data, GenDir + "/TerrainData.asset");
+            CreateOrReplace(data, $"{GenDir}/{s_Stage.file}_TerrainData.asset");
 
             var heights = new float[HeightRes, HeightRes];
             for (int iz = 0; iz < HeightRes; iz++)
@@ -136,12 +154,7 @@ namespace Untrodden.EditorTools
             }
             data.SetHeights(0, 0, heights);
 
-            data.terrainLayers = new[]
-            {
-                Layer("Snow", new Color(0.93f, 0.95f, 0.98f), new Color(0.82f, 0.86f, 0.92f)),   // 숲속 자연설
-                Layer("Rock", new Color(0.45f, 0.46f, 0.48f), new Color(0.32f, 0.33f, 0.35f)),
-                Layer("Piste", new Color(0.8f, 0.84f, 0.9f), new Color(0.7f, 0.74f, 0.81f)),   // 정설된 슬로프
-            };
+            data.terrainLayers = s_TerrainLayers;
 
             var alpha = new float[AlphaRes, AlphaRes, 3];
             for (int iz = 0; iz < AlphaRes; iz++)
@@ -150,7 +163,7 @@ namespace Untrodden.EditorTools
                 float nx = ix / (float)(AlphaRes - 1), nz = iz / (float)(AlphaRes - 1);
                 float x = nx * SizeX, z = nz * SizeZ;
                 float steep = data.GetSteepness(nx, nz);
-                float rock = SmoothStep(30f, 42f, steep);
+                float rock = Mathf.Max(SmoothStep(30f, 42f, steep), GravelWeight(x, z)); // 자갈밭은 돌 색으로 칠한다
                 bool onCourse = z > StartZ - 14f && z < FinishZ + 30f;
                 float piste = onCourse ? SmoothStep(0.8f, -0.8f, RunEdge(x, z)) * (1f - rock) : 0f;
                 float snow = Mathf.Max(0f, 1f - rock - piste);
@@ -175,6 +188,18 @@ namespace Untrodden.EditorTools
             GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
         }
 
+        static TerrainLayer[] s_TerrainLayers;
+
+        static void CreateTerrainLayers()
+        {
+            s_TerrainLayers = new[]
+            {
+                Layer("Snow", new Color(0.93f, 0.95f, 0.98f), new Color(0.82f, 0.86f, 0.92f)),   // 숲속 자연설
+                Layer("Rock", new Color(0.45f, 0.46f, 0.48f), new Color(0.32f, 0.33f, 0.35f)),
+                Layer("Piste", new Color(0.8f, 0.84f, 0.9f), new Color(0.7f, 0.74f, 0.81f)),   // 정설된 슬로프
+            };
+        }
+
         static TerrainLayer Layer(string name, Color a, Color b)
         {
             var tex = NoiseTexture(a, b, name.GetHashCode());
@@ -189,11 +214,14 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 물 ─────────────────────────
 
+        static Mesh s_SeaMesh;
+
         static void BuildWater(Transform parent)
         {
             var water = FindMaterial("SyntyStudios_Water", "Water");
 
             // 바다
+            if (s_SeaMesh != null) { MeshObject("Sea", parent, s_SeaMesh, water); return; }
             var sea = new Mesh { name = "Sea" };
             sea.SetVertices(new[]
             {
@@ -204,6 +232,7 @@ namespace Untrodden.EditorTools
             sea.SetTriangles(new[] { 0, 2, 1, 1, 2, 3 }, 0);
             sea.RecalculateNormals();
             CreateOrReplace(sea, GenDir + "/SeaMesh.asset");
+            s_SeaMesh = sea;
             MeshObject("Sea", parent, sea, water);
 
         }
@@ -318,71 +347,6 @@ namespace Untrodden.EditorTools
             r.shadowCastingMode = ShadowCastingMode.Off;
         }
 
-        // ───────────────────────── 모닥불 자리 ─────────────────────────
-
-        static void BuildCampfireSite(Transform parent, int index, Vector2 pos2)
-        {
-            var site = new GameObject($"CampfireSite_{index}").transform;
-            site.SetParent(parent);
-            var center = Ground(pos2);
-            site.position = center;
-
-            var fireGo = new GameObject("Campfire");
-            fireGo.transform.SetParent(site, false);
-            var fire = fireGo.AddComponent<Campfire>();
-
-            // 돌 테두리
-            var stone = Prefab("SM_Rock_Small_01");
-            for (int i = 0; i < 8; i++)
-            {
-                float a = i * 45f * Mathf.Deg2Rad;
-                var p = center + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 0.55f;
-                GameObject s;
-                if (stone) s = Place(stone, fireGo.transform, p, Rand(0f, 360f), 1f);
-                else
-                {
-                    s = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    s.transform.SetParent(fireGo.transform);
-                    s.transform.position = p;
-                }
-                FitToSize(s, 0.28f);
-                foreach (var col in s.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
-            }
-
-            var fx = Prefab("FX_Fire_01");
-            if (fx)
-            {
-                var f = Place(fx, fireGo.transform, center + Vector3.up * 0.05f, 0f, 0.7f);
-                fire.fireEffect = f;
-            }
-            var light = new GameObject("FireLight").AddComponent<Light>();
-            light.transform.SetParent(fireGo.transform);
-            light.transform.position = center + Vector3.up * 0.7f;
-            light.type = LightType.Point;
-            light.color = new Color(1f, 0.55f, 0.2f);
-            light.range = 9f;
-            light.intensity = 2.5f;
-            light.shadows = LightShadows.None;
-            fire.fireLight = light;
-            fire.crackle = AudioObject("Crackle", fireGo.transform, center + Vector3.up * 0.3f, ProceduralAudioSource.Kind.Crackle, false, 1f, 0.7f);
-
-            // 리스폰 지점: 불 옆 슬로프 가장자리에서 아래(진행 방향)를 바라봄
-            float side = Mathf.Sign(RunX(pos2.y) - pos2.x);
-            var rp = new Vector2(pos2.x + side * 3.5f, pos2.y + 1f);
-            var t = RunTangent(rp.y);
-            fire.respawnPoint = Marker("RespawnPoint", rp, Mathf.Atan2(t.x, t.y) * Mathf.Rad2Deg, site);
-
-            // 장작더미·통나무 의자 장식
-            var logPrefab = Prefab("SM_Tree_Log_01");
-            if (logPrefab)
-            {
-                var log = Place(logPrefab, site, Ground(new Vector2(pos2.x - side * 1.6f, pos2.y)), 90f, 1f);
-                FitToSize(log, 1.6f);
-                SnowCover(log);
-                foreach (var col in log.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
-            }
-        }
-
         // ───────────────────────── XR 리그 ─────────────────────────
 
         static XROrigin BuildRig(Vector2 start)
@@ -402,11 +366,10 @@ namespace Untrodden.EditorTools
             ConfigureLocomotion(go);
             var move = go.GetComponentInChildren<ContinuousMoveProvider>(true);
             var turn = go.GetComponentInChildren<ContinuousTurnProvider>(true);
-            if (move != null)
-            {
-                move.moveSpeed = 1.3f; // 스키 신고 걷기
-                EditorUtility.SetDirty(move);
-            }
+            // 수동 이동(스틱 걷기·회전)은 쓰지 않는다. 움직임은 폴로만 일으킨다.
+            if (move != null) move.enabled = false;
+            if (turn != null) turn.enabled = false;
+            foreach (var snap in go.GetComponentsInChildren<SnapTurnProvider>(true)) snap.enabled = false;
 
             // 스키 폴·스키·스키 이동
             var left = FindDeep(go.transform, "Left Controller");
@@ -417,9 +380,10 @@ namespace Untrodden.EditorTools
             if (left != null) ski.leftPole = BuildPole(left, SkiPole.Side.Left);
             if (right != null) ski.rightPole = BuildPole(right, SkiPole.Side.Right);
             ski.skis = BuildSkis();
-            ski.walkProviders = new Behaviour[] { move, turn };
+            ski.walkProviders = new Behaviour[0];
             ski.windAudio = AudioObject("SkiWind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0f);
             ski.crashAudio = AudioObject("CrashThud", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Knock, false, 0f, 0.9f);
+            ski.gravelAudio = AudioObject("GravelRattle", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Crackle, true, 0f, 0f);
             SpeedFlakes(cam.transform);
 
             // 스키·걷기·회전 중에만 비네팅
@@ -481,7 +445,7 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 시스템·UI ─────────────────────────
 
-        static void BuildSystems(XROrigin rig, Camera cam, Transform startPoint, Transform goalPoint, Vector2 start, SlalomGate[] gates)
+        static void BuildSystems(XROrigin rig, Camera cam, Transform startPoint, Transform goalPoint, Vector2 start, SlalomGate[] gates, int stageIndex, float timeLimit)
         {
             var systems = new GameObject("Systems");
 
@@ -494,7 +458,9 @@ namespace Untrodden.EditorTools
             gm.startPoint = startPoint;
             gm.goalPoint = goalPoint;
             gm.goalRadius = RunHalfWidth(FinishZ) + 3f;
-            systems.AddComponent<PlayerVitals>();
+            gm.stageIndex = stageIndex;
+            gm.timeLimit = timeLimit;
+            systems.AddComponent<CoursePath>().points = BuildCoursePoints();
             var course = systems.AddComponent<CourseTracker>();
             course.gates = gates;
             course.missPenalty = 5f;
@@ -502,7 +468,7 @@ namespace Untrodden.EditorTools
             var playArea = systems.AddComponent<PlayArea>();
             playArea.min = PlayMin;
             playArea.max = PlayMax;
-            systems.AddComponent<ReturnToCampfireInput>();
+            systems.AddComponent<ReturnToCourseInput>();
 
             // 눈보라: 머리 위를 따라다니는 눈 파티클 + 바람 소리
             var blizzard = systems.AddComponent<Blizzard>();
@@ -542,50 +508,55 @@ namespace Untrodden.EditorTools
             breathGo.AddComponent<BreathPuff>().head = cam.transform;
             BreathSystem(breathGo);
 
-            // 시작 화면
-            var title = WorldCanvas("TitleCanvas", null, new Vector2(1000, 720), 0.0016f, true, cam);
+            // 시작 화면: 스테이지 선택(어느 스테이지든 바로 고를 수 있다)
+            var title = WorldCanvas("TitleCanvas", null, new Vector2(1000, 760), 0.0016f, true, cam);
             var startRot = Quaternion.Euler(0f, StartYaw(), 0f);
             title.transform.SetPositionAndRotation(Ground(start) + Vector3.up * 1.6f + startRot * Vector3.forward * 2.6f, startRot);
-            Panel(title.transform, new Color(0.05f, 0.07f, 0.1f, 0.82f));
-            Text(title.transform, "Untrodden", 120, new Vector2(0, 230), new Vector2(950, 150), Color.white, FontStyles.Bold);
-            Text(title.transform, "눈 덮인 산을 스키로 내려가며 깃발 관문을 통과하고\n바닷가 마을까지 가장 빠르게 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
-            Text(title.transform, $"제작  {CreatorName}", 32, new Vector2(0, 0), new Vector2(900, 50), new Color(1f, 0.8f, 0.5f));
-            Text(title.transform, "폴 끝이 눈에 닿으면 톡 떨림 · 닿은 채 뒤로 밀기: 출발 · 양손을 돌린 쪽으로 회전 · 옆으로 꺾으면 감속\n멈췄을 때 왼쪽 스틱 걷기·오른쪽 스틱 회전 · 막히면 왼쪽 메뉴 버튼 길게: 모닥불로\n놓친 관문 +5초 · 부딪히거나 눈보라를 맞으면 체력 감소 · 모닥불을 지나면 회복", 24, new Vector2(0, -95), new Vector2(980, 120), new Color(0.75f, 0.8f, 0.88f));
-            var startBtn = Button(title.transform, "시작하기", new Vector2(0, -235));
-            UnityEventTools.AddPersistentListener(startBtn.onClick, new UnityAction(gm.StartGame));
+            Panel(title.transform, new Color(0.05f, 0.07f, 0.1f, 0.95f)); // 뒤의 출발 아치가 비쳐 글자를 가리지 않게 거의 불투명
+            Text(title.transform, "Untrodden", 110, new Vector2(0, 300), new Vector2(950, 130), Color.white, FontStyles.Bold);
+            Text(title.transform, $"제작  {CreatorName}", 30, new Vector2(0, 220), new Vector2(900, 44), new Color(1f, 0.8f, 0.5f));
+            Text(title.transform, $"<b>{Stages.Titles[stageIndex]}</b>  ·  제한시간 {timeLimit:0}초\n<size=85%>{Stages.Descriptions[stageIndex]}</size>",
+                 30, new Vector2(0, 130), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
+            for (int i = 0; i < Stages.Count; i++)
+            {
+                var pos = new Vector2(i % 2 == 0 ? -235 : 235, i < 2 ? 10 : -100);
+                var color = i == stageIndex ? new Color(0.95f, 0.55f, 0.2f) : new Color(0.25f, 0.42f, 0.62f);
+                var btn = Button(title.transform, Stages.Titles[i], pos, new Vector2(440, 92), color);
+                UnityEventTools.AddIntPersistentListener(btn.onClick, new UnityAction<int>(gm.SelectStage), i);
+            }
+            Text(title.transform, "폴 끝을 눈에 대면 톡 떨림 · 닿은 채 뒤로 밀기: 출발(처음 한 번은 슬로프까지 부스트) · 한 손만 밀면 반대로 돌며 가속\n양손을 돌린 쪽으로 회전(크게 꺾으면 감속) · 점프 착지: 폴을 들고 진행 방향을 가리키기\n제한시간 안에 결승선 통과 · 놓친 관문 +5초 · 막히면 왼쪽 메뉴 버튼 길게: 코스로 복귀",
+                 22, new Vector2(0, -270), new Vector2(980, 120), new Color(0.75f, 0.8f, 0.88f));
             gm.titleCanvas = title.gameObject;
             var titleFollow = title.gameObject.AddComponent<TitleFollow>();
             titleFollow.head = cam.transform;
             titleFollow.distance = 2.6f;
 
-            // 결과 화면
+            // 결과 화면: 클리어/시간 초과 + 다시 하기 · 스테이지 선택 · 다음 스테이지
             var result = WorldCanvas("ResultCanvas", null, new Vector2(900, 620), 0.0016f, true, cam);
             Panel(result.transform, new Color(0.05f, 0.07f, 0.1f, 0.85f));
-            Text(result.transform, "결승선 통과!", 70, new Vector2(0, 210), new Vector2(850, 110), new Color(1f, 0.85f, 0.55f), FontStyles.Bold);
-            var stats = Text(result.transform, "", 40, new Vector2(0, 25), new Vector2(840, 260), Color.white);
             var rs = result.gameObject.AddComponent<ResultScreen>();
-            rs.statsText = stats;
-            var again = Button(result.transform, "다시 하기", new Vector2(0, -200));
+            rs.titleText = Text(result.transform, "", 70, new Vector2(0, 220), new Vector2(850, 110), new Color(1f, 0.85f, 0.55f), FontStyles.Bold);
+            rs.statsText = Text(result.transform, "", 36, new Vector2(0, 40), new Vector2(840, 240), Color.white);
+            var again = Button(result.transform, "다시 하기", new Vector2(-290, -200), new Vector2(270, 90), new Color(0.95f, 0.55f, 0.2f));
             UnityEventTools.AddPersistentListener(again.onClick, new UnityAction(rs.OnRestart));
+            var select = Button(result.transform, "스테이지 선택", new Vector2(0, -200), new Vector2(270, 90), new Color(0.25f, 0.42f, 0.62f));
+            UnityEventTools.AddPersistentListener(select.onClick, new UnityAction(rs.OnStageSelect));
+            var next = Button(result.transform, "다음 스테이지", new Vector2(290, -200), new Vector2(270, 90), new Color(0.2f, 0.65f, 0.35f));
+            UnityEventTools.AddPersistentListener(next.onClick, new UnityAction(rs.OnNext));
+            rs.nextButton = next.gameObject;
             gm.resultScreen = rs;
 
-            // 손목 HUD (왼손)
+            // 손목 HUD (왼손): 나침반만. 남은 시간·속도·관문은 콕핏 HUD에, 알림은 시야 위쪽 한 곳에만 띄운다(중복 제거)
             var left = FindDeep(rig.transform, "Left Controller");
-            var hud = WorldCanvas("WristHUD", left != null ? left : cam.transform, new Vector2(320, 250), 0.0005f, false, cam);
+            var hud = WorldCanvas("WristHUD", left != null ? left : cam.transform, new Vector2(150, 150), 0.0005f, false, cam);
             hud.transform.localPosition = left != null ? new Vector3(0f, 0.035f, -0.11f) : new Vector3(-0.2f, -0.2f, 0.5f);
             hud.transform.localRotation = left != null ? Quaternion.Euler(62f, 0f, 0f) : Quaternion.identity;
-            Panel(hud.transform, new Color(0.04f, 0.05f, 0.08f, 0.78f));
+            Panel(hud.transform, new Color(0.04f, 0.05f, 0.08f, 0.6f));
             var w = hud.gameObject.AddComponent<WristHUD>();
-            w.timeText = Text(hud.transform, "0:00.0", 30, new Vector2(-60, 95), new Vector2(190, 40), Color.white, FontStyles.Bold);
-            w.speedText = Text(hud.transform, "0 km/h", 22, new Vector2(100, 95), new Vector2(110, 36), new Color(0.8f, 0.9f, 1f));
-            w.healthFill = Bar(hud.transform, "체력", 55, new Color(0.9f, 0.25f, 0.25f));
-            w.gateText = Text(hud.transform, "관문 0/0", 24, new Vector2(-65, 8), new Vector2(180, 34), Color.white);
-            w.statusText = Text(hud.transform, "", 20, new Vector2(-65, -30), new Vector2(180, 30), Color.white);
-            w.noticeText = Text(hud.transform, "", 17, new Vector2(0, -95), new Vector2(305, 50), new Color(1f, 0.9f, 0.7f));
 
             // 나침반: 위쪽 = 지금 바라보는 방향. N은 북쪽(바다), 노란 화살표는 다음 관문
             var ring = Image(hud.transform, s_Ring, new Color(1f, 1f, 1f, 0.7f));
-            ring.rectTransform.anchoredPosition = new Vector2(100, -12);
+            ring.rectTransform.anchoredPosition = Vector2.zero;
             ring.rectTransform.sizeDelta = new Vector2(88, 88);
             RectTransform Dial(string name)
             {
@@ -604,10 +575,37 @@ namespace Untrodden.EditorTools
             // 알림: 고개에 붙어 다니므로 시야 중심 가까이(약 5° 아래) 둔다.
             // 너무 아래에 두면 고개를 숙여도 따라 내려가서 눈만 아래로 굴려야 하고, 렌즈 가장자리라 흐릿하게 보인다.
             // 거리는 렌즈 초점 거리(약 1.5m 이상)에 맞춘다.
+            // 시야 중심보다 약 6° 위, 작게: 앞길(아래쪽)을 가리지 않는다
             var toast = WorldCanvas("ToastCanvas", cam.transform, new Vector2(800, 120), 0.0016f, false, cam);
-            toast.transform.localPosition = new Vector3(0f, -0.14f, 1.6f);
+            toast.transform.localPosition = new Vector3(0f, 0.17f, 1.6f);
             toast.transform.localRotation = Quaternion.identity;
-            w.toastText = Text(toast.transform, "", 40, Vector2.zero, new Vector2(780, 110), new Color(1f, 0.95f, 0.85f));
+            w.toastText = Text(toast.transform, "", 28, Vector2.zero, new Vector2(780, 110), new Color(1f, 0.95f, 0.85f));
+
+            // 콕핏 HUD: 시야 중심에서 좌우로 약 14°, 아래로 약 7°에 고정. 손목을 보지 않고도 남은 시간·속도를 확인한다.
+            //  왼쪽 = 남은 시간(숫자 + 막대) · 눈보라 / 오른쪽 = 속도 · 관문
+            Canvas CockpitPanel(string name, float x)
+            {
+                var c = WorldCanvas(name, cam.transform, new Vector2(300, 150), 0.0013f, false, cam);
+                c.transform.localPosition = new Vector3(x, -0.2f, 1.6f);
+                // 눈 쪽을 향하도록 살짝 안으로 돌린다
+                c.transform.localRotation = Quaternion.Euler(0f, Mathf.Atan2(x, 1.6f) * Mathf.Rad2Deg, 0f);
+                Panel(c.transform, new Color(0.03f, 0.04f, 0.07f, 0.45f));
+                return c;
+            }
+            var leftHud = CockpitPanel("CockpitHUD_Left", -0.4f);
+            w.cockpitTimeText = Text(leftHud.transform, "0:00.0", 54, new Vector2(0, 28), new Vector2(290, 70), Color.white, FontStyles.Bold);
+            var tbg = Image(leftHud.transform, s_White, new Color(1f, 1f, 1f, 0.18f));
+            tbg.rectTransform.anchoredPosition = new Vector2(0, -22);
+            tbg.rectTransform.sizeDelta = new Vector2(250, 14);
+            var tfill = Image(tbg.transform, s_White, new Color(0.35f, 0.75f, 1f));
+            tfill.type = UnityEngine.UI.Image.Type.Filled;
+            tfill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+            Stretch(tfill.rectTransform);
+            w.cockpitTimeFill = tfill;
+            w.cockpitStatusText = Text(leftHud.transform, "", 26, new Vector2(0, -52), new Vector2(290, 36), Color.white);
+            var rightHud = CockpitPanel("CockpitHUD_Right", 0.4f);
+            w.cockpitSpeedText = Text(rightHud.transform, "0", 58, new Vector2(0, 22), new Vector2(290, 80), new Color(0.85f, 0.93f, 1f), FontStyles.Bold);
+            w.cockpitGateText = Text(rightHud.transform, "", 26, new Vector2(0, -45), new Vector2(290, 36), Color.white);
             w.toastText.outlineWidth = 0.2f;
             w.toastText.outlineColor = new Color32(0, 0, 0, 200);
 
@@ -691,19 +689,22 @@ namespace Untrodden.EditorTools
             return t;
         }
 
-        static Button Button(Transform parent, string label, Vector2 pos)
+        static Button Button(Transform parent, string label, Vector2 pos) =>
+            Button(parent, label, pos, new Vector2(380, 96), new Color(0.95f, 0.55f, 0.2f));
+
+        static Button Button(Transform parent, string label, Vector2 pos, Vector2 size, Color color)
         {
-            var img = Image(parent, s_White, new Color(0.95f, 0.55f, 0.2f));
+            var img = Image(parent, s_White, color);
             img.name = "Button";
             img.raycastTarget = true;
             img.rectTransform.anchoredPosition = pos;
-            img.rectTransform.sizeDelta = new Vector2(380, 96);
+            img.rectTransform.sizeDelta = size;
             var b = img.gameObject.AddComponent<Button>();
             var colors = b.colors;
             colors.highlightedColor = new Color(1f, 0.85f, 0.7f);
             colors.pressedColor = new Color(0.8f, 0.5f, 0.3f);
             b.colors = colors;
-            Text(img.transform, label, 44, Vector2.zero, new Vector2(370, 90), Color.white, FontStyles.Bold);
+            Text(img.transform, label, size.x < 300f ? 36 : 44, Vector2.zero, size - new Vector2(10, 6), Color.white, FontStyles.Bold);
             return b;
         }
 

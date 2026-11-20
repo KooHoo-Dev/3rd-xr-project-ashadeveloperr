@@ -5,12 +5,13 @@ using UnityEngine.UI;
 namespace Untrodden
 {
     /// <summary>
-    /// 왼손 손목 UI: 체력, 기록, 관문, 속도, 눈보라 예고, 나침반, 알림.
+    /// 왼손 손목 UI: 남은 시간(막대·숫자), 관문, 속도, 눈보라, 나침반, 알림.
     /// 나침반은 "지금 바라보는 방향 = 위쪽" 기준으로 북쪽(N)과 다음 목표(화살표)를 보여준다.
     /// </summary>
     public class WristHUD : MonoBehaviour
     {
-        public Image healthFill;
+        [Tooltip("남은 시간 막대(제한시간 대비)")]
+        public Image timeFill;
         public TMP_Text timeText;
         public TMP_Text gateText;
         public TMP_Text speedText;
@@ -18,6 +19,14 @@ namespace Untrodden
         public TMP_Text noticeText;
         [Tooltip("시야 아래쪽에 잠깐 뜨는 알림(손목을 안 봐도 보이도록)")]
         public TMP_Text toastText;
+        [Header("Cockpit HUD (시야 옆에 고정)")]
+        [Tooltip("폴을 움직이느라 손목을 볼 수 없으므로 시야 옆에 남은 시간·속도를 띄운다")]
+        public TMP_Text cockpitTimeText;
+        public Image cockpitTimeFill;
+        public TMP_Text cockpitSpeedText;
+        public TMP_Text cockpitGateText;
+        public TMP_Text cockpitStatusText;
+
         public RectTransform compassNorth;
         public RectTransform compassTarget;
         public AudioSource alertAudio;
@@ -57,25 +66,44 @@ namespace Untrodden
         void Update()
         {
             var gm = GameManager.Instance;
-            var v = PlayerVitals.Instance;
             var course = CourseTracker.Instance;
             var ski = SkiController.Instance;
 
-            if (healthFill && v != null) healthFill.fillAmount = Mathf.Clamp01(v.Health / v.maxHealth);
-
-            if (timeText && gm != null)
+            if (gm != null)
             {
-                float t = gm.ElapsedTime;
-                int m = Mathf.FloorToInt(t / 60f);
-                string pen = course != null && course.Penalty > 0f ? $" <color=#FF8A7A>+{course.Penalty:0}</color>" : "";
-                timeText.text = $"{m}:{t - m * 60f:00.0}{pen}";
+                // 남은 시간 = 제한시간 − (주행 + 관문 벌점). 10초 아래면 붉게.
+                float left = gm.State == GameState.Title ? gm.timeLimit : Mathf.Max(0f, gm.TimeLeft);
+                float ratio = gm.timeLimit > 0f ? Mathf.Clamp01(left / gm.timeLimit) : 0f;
+                if (timeFill)
+                {
+                    timeFill.fillAmount = ratio;
+                    timeFill.color = left < 10f ? new Color(0.95f, 0.3f, 0.25f) : new Color(0.35f, 0.75f, 1f);
+                }
+                int mm = Mathf.FloorToInt(left / 60f);
+                string col = left < 10f ? "#FF6B5E" : "#FFFFFF";
+                string timeStr = $"<color={col}>{mm}:{left - mm * 60f:00.0}</color>";
+                if (timeText) timeText.text = timeStr;
+                if (cockpitTimeText) cockpitTimeText.text = timeStr;
+                if (cockpitTimeFill)
+                {
+                    cockpitTimeFill.fillAmount = ratio;
+                    cockpitTimeFill.color = left < 10f ? new Color(0.95f, 0.3f, 0.25f) : new Color(0.35f, 0.75f, 1f);
+                }
             }
 
-            if (gateText && course != null)
-                gateText.text = $"관문 {course.Passed + course.Missed}/{course.Total}";
+            if (course != null)
+            {
+                string gates = $"관문 {course.Passed + course.Missed}/{course.Total}";
+                if (gateText) gateText.text = gates;
+                if (cockpitGateText) cockpitGateText.text = gates;
+            }
 
-            if (speedText && ski != null)
-                speedText.text = $"{ski.Speed * 3.6f:0} km/h";
+            if (ski != null)
+            {
+                string spd = $"{ski.Speed * 3.6f:0}";
+                if (speedText) speedText.text = spd + " km/h";
+                if (cockpitSpeedText) cockpitSpeedText.text = $"{spd}<size=50%> km/h</size>";
+            }
 
             if (statusText)
             {
@@ -83,12 +111,11 @@ namespace Untrodden
                 var b = Blizzard.Instance;
                 if (b != null)
                 {
-                    if (b.CurrentPhase == Blizzard.Phase.Warning)
-                        status = $"<color=#FFB347>눈보라까지 {Mathf.CeilToInt(b.PhaseTimeLeft)}초</color>";
-                    else if (b.CurrentPhase == Blizzard.Phase.Storm)
+                    if (b.CurrentPhase == Blizzard.Phase.Storm)
                         status = "<color=#9FD8FF>눈보라!</color>";
                 }
                 statusText.text = status;
+                if (cockpitStatusText) cockpitStatusText.text = status;
             }
 
             UpdateCompass(gm, course);

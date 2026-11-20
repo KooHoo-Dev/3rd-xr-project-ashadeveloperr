@@ -4,7 +4,7 @@ namespace Untrodden
 {
     /// <summary>
     /// 플레이어가 다닐 수 있는 영역(XZ 사각형)을 정의하고,
-    /// 영역 밖으로 나가거나 지형 아래로 떨어지면 마지막 모닥불로 돌려보낸다.
+    /// 영역 밖으로 나가거나 지형 아래로 떨어지면 가장 가까운 코스 위로 돌려보낸다.
     /// </summary>
     public class PlayArea : MonoBehaviour
     {
@@ -45,7 +45,7 @@ namespace Untrodden
                         || !Contains(head, outsideMargin)
                         || head.y < GroundY(head) - belowGroundMargin;
             if (lost)
-                gm.ReturnToCheckpoint("길을 벗어났어요. 마지막 모닥불로 돌아갑니다.");
+                gm.ReturnToCourse("길을 벗어났어요. 코스로 돌아갑니다.");
         }
     }
 }
