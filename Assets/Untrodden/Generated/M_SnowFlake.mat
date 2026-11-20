@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: M_SnowFlake
+  m_Shader: {fileID: 4800000, guid: cdf3cf4c4cd119e418f3032ec7d83363, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: 3000
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _AmbientStrength: 1
+    - _BlurDistance: 25
+    - _BokehGrow: 1.5
+    - _EdgeSoftness: 0.7
+    - _FocusDistance: 6
+    - _FocusRange: 3
+    - _ForwardScatter: 1.5
+    - _Irregularity: 0.18
+    - _LightStrength: 0.6
+    - _MaxStretch: 3.5
+    - _NearFadeRange: 0.6
+    - _NearFadeStart: 0.35
+    - _NoiseScale: 2
+    - _NoiseScroll: 0.4
+    - _Opacity: 0.9
+    - _SoftParticleDistance: 0.3
+    - _SoftParticles: 0
+    - _StretchAmount: 0.018
+    - _Twinkle: 0.25
+    - _Wispiness: 0
+    m_Colors:
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

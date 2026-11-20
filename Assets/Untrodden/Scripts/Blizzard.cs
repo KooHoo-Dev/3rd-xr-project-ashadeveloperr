@@ -16,10 +16,19 @@ namespace Untrodden
         public float warningDuration = 20f;
         public float stormDuration = 30f;
 
+        /// <summary>눈 파티클 한 겹. 평소 ↔ 눈보라 사이에서 양과 바람을 보간한다.</summary>
+        [System.Serializable]
+        public class SnowLayer
+        {
+            public ParticleSystem system;
+            public float calmRate;
+            public float stormRate;
+            [Tooltip("바람 세기 배율(눈가루 덩어리는 더 빨리 날린다)")]
+            public float windScale = 1f;
+        }
         [Header("Atmosphere")]
-        public ParticleSystem snow;
-        public float calmSnowRate = 60f;
-        public float stormSnowRate = 900f;
+        [Tooltip("Blizzard 셰이더(원본: 3rd-study-shader 02_Blizzard)를 쓰는 눈 레이어들")]
+        public SnowLayer[] snowLayers;
         public AudioSource wind;
         public Light sun;
         public Color calmFog = new(0.72f, 0.78f, 0.85f);
@@ -103,13 +112,18 @@ namespace Untrodden
                 playerCamera.farClipPlane = RenderSettings.fogEndDistance + 4f;
             }
 
-            if (snow)
+            if (snowLayers != null)
             {
-                var emission = snow.emission;
-                emission.rateOverTime = Mathf.Lerp(calmSnowRate, stormSnowRate, Intensity);
-                var vel = snow.velocityOverLifetime;
                 float drift = Mathf.Lerp(windDrift.x, windDrift.y, Intensity);
-                vel.x = new ParticleSystem.MinMaxCurve(drift * 0.5f, drift * 1.3f);
+                foreach (var layer in snowLayers)
+                {
+                    if (layer == null || layer.system == null) continue;
+                    var emission = layer.system.emission;
+                    emission.rateOverTime = Mathf.Lerp(layer.calmRate, layer.stormRate, Intensity);
+                    var vel = layer.system.velocityOverLifetime;
+                    float d = drift * layer.windScale;
+                    vel.x = new ParticleSystem.MinMaxCurve(d * 0.5f, d * 1.3f);
+                }
             }
             if (wind) wind.volume = Mathf.Lerp(0.15f, 0.9f, Mathf.Max(Intensity, CurrentPhase == Phase.Warning ? 0.45f : 0f));
             if (sun) sun.intensity = Mathf.Lerp(m_SunBase, m_SunBase * 0.35f, Intensity);

@@ -357,13 +357,17 @@ namespace Untrodden.EditorTools
 
         // ───────────────────────── 폴·스키 ─────────────────────────
 
+        /// <summary>폴 기울기. 90 = 컨트롤러 바로 아래, 클수록 끝이 뒤로 간다.</summary>
+        const float PoleDownAngle = 100f;
+
         static SkiPole BuildPole(Transform controller, SkiPole.Side side)
         {
-            const float length = 1.15f;
+            const float length = 1.1f;
             var go = new GameObject(side == SkiPole.Side.Left ? "SkiPole_L" : "SkiPole_R");
             go.transform.SetParent(controller, false);
-            // 폴은 컨트롤러 -forward(주먹 아래, 새끼손가락 쪽)로 뻗는다
-            go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // 컨트롤러를 편하게 쥐었을 때 폴이 주먹 아래로 내려가도록 컨트롤러 -up 방향,
+            // 끝이 살짝 뒤로 가게 기울인다 (Euler x=90이면 정확히 -up)
+            go.transform.localRotation = Quaternion.Euler(PoleDownAngle, 0f, 0f);
             go.transform.localPosition = Vector3.zero;
             var pole = go.AddComponent<SkiPole>();
             pole.side = side;
@@ -386,68 +390,6 @@ namespace Untrodden.EditorTools
             Part("Shaft", PrimitiveType.Cylinder, new Vector3(0f, 0f, length / 2f), new Vector3(0.016f, length / 2f, 0.016f), s_IvoryMat);
             Part("Basket", PrimitiveType.Cylinder, new Vector3(0f, 0f, length - 0.1f), new Vector3(0.09f, 0.006f, 0.09f), s_RedMat);
             return pole;
-        }
-
-        /// <summary>출발 지점 양옆의 폴 거치대. 폴을 잡으면(XRGrabInteractable) 그 손에 폴이 장착된다.</summary>
-        static void BuildPoleRack(Transform parent, Vector2 start)
-        {
-            var rot = Quaternion.Euler(0f, StartYaw(), 0f);
-            var right = rot * Vector3.right;
-            var fwd = rot * Vector3.forward;
-            var root = new GameObject("PoleRack").transform;
-            root.SetParent(parent);
-            var basePos = Ground(start) + fwd * 0.7f;
-            root.SetPositionAndRotation(basePos, rot);
-
-            foreach (float side in new[] { -1f, 1f })
-            {
-                // 거치대 기둥 + 가로대
-                var standPos = new Vector3(side * 0.75f, 0f, 0f);
-                Box(root, "RackPost", standPos + new Vector3(0f, 0.55f, 0.12f), new Vector3(0.08f, 1.1f, 0.08f), Vector3.zero, s_WoodMat, false);
-                Box(root, "RackBar", standPos + new Vector3(0f, 1.0f, 0.06f), new Vector3(0.3f, 0.06f, 0.14f), Vector3.zero, s_WoodMat, false);
-
-                // 세워 둔 폴: 손잡이가 위(지면에서 1.15m), 끝이 눈에 닿음
-                const float length = 1.15f;
-                var go = new GameObject(side < 0 ? "RackPole_L" : "RackPole_R");
-                go.transform.SetParent(root, false);
-                go.transform.localPosition = standPos + new Vector3(0f, length, 0f);
-                go.transform.localRotation = Quaternion.Euler(4f, 0f, side * 3f);
-                void Part(string name, Vector3 pos, Vector3 scale, Material mat)
-                {
-                    var p = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                    p.name = name;
-                    Object.DestroyImmediate(p.GetComponent<Collider>());
-                    p.transform.SetParent(go.transform, false);
-                    p.transform.localPosition = pos;
-                    p.transform.localScale = scale;
-                    var r = p.GetComponent<Renderer>();
-                    r.sharedMaterial = mat;
-                    r.shadowCastingMode = ShadowCastingMode.Off;
-                }
-                Part("Grip", new Vector3(0f, -0.02f, 0f), new Vector3(0.032f, 0.07f, 0.032f), s_DarkMat);
-                Part("Shaft", new Vector3(0f, -length / 2f, 0f), new Vector3(0.016f, length / 2f, 0.016f), s_IvoryMat);
-                Part("Basket", new Vector3(0f, -length + 0.1f, 0f), new Vector3(0.09f, 0.006f, 0.09f), s_RedMat);
-
-                // 잡기 판정은 손잡이 쪽을 넉넉하게
-                var col = go.AddComponent<CapsuleCollider>();
-                col.direction = 1;
-                col.height = 0.6f;
-                col.radius = 0.06f;
-                col.center = new Vector3(0f, -0.25f, 0f);
-                var rb = go.AddComponent<Rigidbody>();
-                rb.isKinematic = true;
-                rb.useGravity = false;
-                var grab = go.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
-                grab.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.Instantaneous;
-                grab.throwOnDetach = false;
-                go.AddComponent<PoleRackItem>();
-            }
-
-            // 안내 문구
-            var canvas = WorldCanvas("PoleRackHint", root, new Vector2(1000, 70), 0.0012f, false, null);
-            canvas.transform.localPosition = new Vector3(0f, 1.32f, 0.1f);
-            canvas.transform.localRotation = Quaternion.Euler(20f, 0f, 0f);
-            Text(canvas.transform, "그립 버튼으로 양손에 폴을 하나씩 잡으세요", 40, Vector2.zero, new Vector2(1000, 70), new Color(1f, 0.9f, 0.6f), FontStyles.Bold);
         }
 
         static Transform BuildSkis()

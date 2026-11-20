@@ -50,7 +50,7 @@ namespace Untrodden.EditorTools
         static Terrain s_Terrain;
         static TMP_FontAsset s_Font;
         static Sprite s_White, s_Vignette;
-        static Material s_SnowMat, s_SparkMat, s_WoodMat, s_DarkMat, s_RedMat, s_IvoryMat, s_WindowMat;
+        static Material s_SnowMat, s_FlakeMat, s_GustMat, s_SparkMat, s_WoodMat, s_DarkMat, s_RedMat, s_IvoryMat, s_WindowMat;
         static readonly List<(Vector2 c, float r, float h)> s_Flats = new();
         static System.Random s_Rng;
 
@@ -103,7 +103,6 @@ namespace Untrodden.EditorTools
             var rig = BuildRig(start);
             var cam = rig.Camera;
             BuildSystems(rig, cam, startPoint, goalPoint, start, gates);
-            BuildPoleRack(gameplay, start);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
@@ -402,7 +401,7 @@ namespace Untrodden.EditorTools
             // 이동 방식: 스키(폴) + 멈췄을 때만 왼쪽 스틱 걷기·오른쪽 스틱 회전. 순간이동은 쓰지 않는다.
             ConfigureLocomotion(go);
             var move = go.GetComponentInChildren<ContinuousMoveProvider>(true);
-            var turn = go.GetComponentInChildren<SnapTurnProvider>(true);
+            var turn = go.GetComponentInChildren<ContinuousTurnProvider>(true);
             if (move != null)
             {
                 move.moveSpeed = 1.3f; // 스키 신고 걷기
@@ -421,8 +420,9 @@ namespace Untrodden.EditorTools
             ski.walkProviders = new Behaviour[] { move, turn };
             ski.windAudio = AudioObject("SkiWind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0f);
             ski.crashAudio = AudioObject("CrashThud", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Knock, false, 0f, 0.9f);
+            SpeedFlakes(cam.transform);
 
-            // 스키·걷기 중에만 비네팅 (스냅 회전은 순간적이라 비네팅 불필요)
+            // 스키·걷기·회전 중에만 비네팅
             var vigPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(VignettePrefab);
             if (vigPrefab != null)
             {
@@ -435,6 +435,8 @@ namespace Untrodden.EditorTools
                     ctrl.locomotionVignetteProviders.Clear();
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = ski, enabled = true });
                     ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = move, enabled = true });
+                    if (turn != null)
+                        ctrl.locomotionVignetteProviders.Add(new LocomotionVignetteProvider { locomotionProvider = turn, enabled = true });
                     EditorUtility.SetDirty(ctrl);
                 }
             }
@@ -460,7 +462,7 @@ namespace Untrodden.EditorTools
                 so.FindProperty("m_TeleportMode").objectReferenceValue = null;
                 so.FindProperty("m_TeleportModeCancel").objectReferenceValue = null;
                 so.FindProperty("m_TeleportInteractor").objectReferenceValue = null;
-                so.FindProperty("m_SmoothTurnEnabled").boolValue = false; // 멈췄을 때 회전은 스냅 회전(멀미 방지)
+                so.FindProperty("m_SmoothTurnEnabled").boolValue = true; // 한 번에 꺾이지 않고 천천히 도는 회전
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -516,7 +518,22 @@ namespace Untrodden.EditorTools
             follow.head = cam.transform;
             follow.heightBelowHead = -7f;
             follow.yawFollowSpeed = 0f;
-            blizzard.snow = SnowSystem(snowGo.transform);
+            // 눈: Blizzard 셰이더 3겹 (원본 데모의 Far 레이어는 안개에 가려 Quest에서는 생략)
+            //  Mid = 주된 눈 / Near = 가끔 얼굴 앞을 스치는 큰 흐린 눈 / Gusts = 눈보라 때만 휩쓸리는 눈가루 덩어리
+            var mid = FlakeLayer(snowGo.transform, "Snow_Mid", s_FlakeMat, new Vector3(0f, -4f, 0f), new Vector3(30f, 8f, 30f),
+                                 new Vector2(0.04f, 0.08f), new Vector2(4f, 6f), 15000, true);
+            var near = FlakeLayer(snowGo.transform, "Snow_Near", s_FlakeMat, new Vector3(0f, -6.5f, 0f), new Vector3(6f, 3f, 6f),
+                                  new Vector2(0.05f, 0.1f), new Vector2(3f, 4f), 800, true);
+            var gusts = FlakeLayer(snowGo.transform, "Snow_Gusts", s_GustMat, new Vector3(0f, -6f, 0f), new Vector3(40f, 5f, 40f),
+                                   new Vector2(6f, 12f), new Vector2(6f, 8f), 100, false);
+            var gustMain = gusts.main;
+            gustMain.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.2f), new Color(1f, 1f, 1f, 0.4f));
+            blizzard.snowLayers = new[]
+            {
+                new Blizzard.SnowLayer { system = mid, calmRate = 300f, stormRate = 2500f, windScale = 1f },
+                new Blizzard.SnowLayer { system = near, calmRate = 15f, stormRate = 150f, windScale = 1f },
+                new Blizzard.SnowLayer { system = gusts, calmRate = 0f, stormRate = 6f, windScale = 1.4f },
+            };
             blizzard.wind = AudioObject("Wind", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Wind, true, 0f, 0.2f);
 
             // 입김
@@ -533,10 +550,13 @@ namespace Untrodden.EditorTools
             Text(title.transform, "Untrodden", 120, new Vector2(0, 230), new Vector2(950, 150), Color.white, FontStyles.Bold);
             Text(title.transform, "눈 덮인 산을 스키로 내려가며 깃발 관문을 통과하고\n바닷가 마을까지 가장 빠르게 도착하세요", 36, new Vector2(0, 85), new Vector2(950, 120), new Color(0.85f, 0.9f, 1f));
             Text(title.transform, $"제작  {CreatorName}", 32, new Vector2(0, 0), new Vector2(900, 50), new Color(1f, 0.8f, 0.5f));
-            Text(title.transform, "양손 폴을 눈에 대고 뒤로 밀기: 출발·가속 · 한쪽 폴 끌기: 회전 · 양쪽: 브레이크\n멈췄을 때 왼쪽 스틱 걷기 · 막히면 왼쪽 메뉴 버튼 길게: 모닥불로\n놓친 관문 +5초 · 부딪히거나 눈보라를 맞으면 체력 감소 · 모닥불을 지나면 회복", 24, new Vector2(0, -95), new Vector2(980, 120), new Color(0.75f, 0.8f, 0.88f));
+            Text(title.transform, "폴 끝이 눈에 닿으면 톡 떨림 · 닿은 채 뒤로 밀기: 출발 · 양손을 돌린 쪽으로 회전 · 옆으로 꺾으면 감속\n멈췄을 때 왼쪽 스틱 걷기·오른쪽 스틱 회전 · 막히면 왼쪽 메뉴 버튼 길게: 모닥불로\n놓친 관문 +5초 · 부딪히거나 눈보라를 맞으면 체력 감소 · 모닥불을 지나면 회복", 24, new Vector2(0, -95), new Vector2(980, 120), new Color(0.75f, 0.8f, 0.88f));
             var startBtn = Button(title.transform, "시작하기", new Vector2(0, -235));
             UnityEventTools.AddPersistentListener(startBtn.onClick, new UnityAction(gm.StartGame));
             gm.titleCanvas = title.gameObject;
+            var titleFollow = title.gameObject.AddComponent<TitleFollow>();
+            titleFollow.head = cam.transform;
+            titleFollow.distance = 2.6f;
 
             // 결과 화면
             var result = WorldCanvas("ResultCanvas", null, new Vector2(900, 620), 0.0016f, true, cam);
@@ -581,9 +601,11 @@ namespace Untrodden.EditorTools
             Text(w.compassTarget, "▲", 26, new Vector2(0, 18), new Vector2(34, 30), new Color(1f, 0.85f, 0.2f));
             w.alertAudio = AudioObject("AlertBeep", cam.transform, cam.transform.position, ProceduralAudioSource.Kind.Beep, false, 0f, 0.5f);
 
-            // 시야 아래쪽 알림
-            var toast = WorldCanvas("ToastCanvas", cam.transform, new Vector2(800, 120), 0.0012f, false, cam);
-            toast.transform.localPosition = new Vector3(0f, -0.28f, 1.2f);
+            // 알림: 고개에 붙어 다니므로 시야 중심 가까이(약 5° 아래) 둔다.
+            // 너무 아래에 두면 고개를 숙여도 따라 내려가서 눈만 아래로 굴려야 하고, 렌즈 가장자리라 흐릿하게 보인다.
+            // 거리는 렌즈 초점 거리(약 1.5m 이상)에 맞춘다.
+            var toast = WorldCanvas("ToastCanvas", cam.transform, new Vector2(800, 120), 0.0016f, false, cam);
+            toast.transform.localPosition = new Vector3(0f, -0.14f, 1.6f);
             toast.transform.localRotation = Quaternion.identity;
             w.toastText = Text(toast.transform, "", 40, Vector2.zero, new Vector2(780, 110), new Color(1f, 0.95f, 0.85f));
             w.toastText.outlineWidth = 0.2f;
@@ -749,38 +771,140 @@ namespace Untrodden.EditorTools
             r.shadowCastingMode = ShadowCastingMode.Off;
         }
 
-        static ParticleSystem SnowSystem(Transform parent)
+        /// <summary>Blizzard 셰이더용 머티리얼. 원본 데모 기본값에서 VR(가까운 거리, 모바일 GPU)에 맞게 조금 줄였다.</summary>
+        static Material BlizzardMaterial(string name, bool gust)
         {
-            var go = new GameObject("Snow");
+            var shader = Shader.Find("Untrodden/Blizzard");
+            if (shader == null) { Debug.LogError("[Untrodden] Untrodden/Blizzard shader not found"); return s_SnowMat; }
+            var m = new Material(shader) { name = name };
+            m.SetColor("_BaseColor", Color.white);
+            m.SetFloat("_Opacity", gust ? 0.85f : 0.9f);
+            m.SetFloat("_AmbientStrength", gust ? 1.1f : 1f);
+            m.SetFloat("_LightStrength", gust ? 0.4f : 0.6f);
+            m.SetFloat("_ForwardScatter", gust ? 1f : 1.5f);
+            m.SetFloat("_EdgeSoftness", gust ? 1f : 0.7f);
+            m.SetFloat("_Irregularity", gust ? 0.3f : 0.18f);
+            m.SetFloat("_Twinkle", gust ? 0f : 0.25f);
+            m.SetFloat("_Wispiness", gust ? 0.85f : 0f);
+            m.SetFloat("_NoiseScale", gust ? 1.3f : 2f);
+            m.SetFloat("_NoiseScroll", gust ? 0.3f : 0.4f);
+            m.SetFloat("_StretchAmount", gust ? 0.12f : 0.018f);
+            m.SetFloat("_MaxStretch", gust ? 2.5f : 3.5f);
+            m.SetFloat("_FocusDistance", 6f);
+            m.SetFloat("_FocusRange", 3f);
+            m.SetFloat("_BlurDistance", 25f);
+            m.SetFloat("_BokehGrow", gust ? 0f : 1.5f); // 원본 2.5 → 크게 번진 눈이 겹쳐 그려지는 양(오버드로)을 줄임
+            m.SetFloat("_SoftParticles", 0f);
+            m.DisableKeyword("_SOFTPARTICLES_ON");
+            m.SetFloat("_SoftParticleDistance", gust ? 2f : 0.3f);
+            m.SetFloat("_NearFadeStart", gust ? 0.5f : 0.35f);
+            m.SetFloat("_NearFadeRange", gust ? 3f : 0.6f);
+            m.renderQueue = (int)RenderQueue.Transparent;
+            CreateOrReplace(m, $"{GenDir}/M_{name}.mat");
+            return m;
+        }
+
+        /// <summary>Blizzard 셰이더를 쓰는 눈 파티클 한 겹(원본 BlizzardDemoBuilder.CreateSnowLayer 기반).</summary>
+        static ParticleSystem FlakeLayer(Transform parent, string name, Material mat, Vector3 localPos, Vector3 box,
+                                         Vector2 size, Vector2 lifetime, int maxParticles, bool prewarm)
+        {
+            var go = new GameObject(name);
             go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPos;
             var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = ps.main;
-            main.startLifetime = 7f;
+            main.duration = 10f;
+            main.loop = true;
+            main.prewarm = prewarm;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(lifetime.x, lifetime.y);
             main.startSpeed = 0f;
-            main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.07f);
+            main.startSize = new ParticleSystem.MinMaxCurve(size.x, size.y);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 1f, 1f, 0.55f), Color.white);
+            main.gravityModifier = 0f;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.maxParticles = 5000;
-            main.gravityModifier = 0.12f;
-            main.prewarm = true;
+            main.maxParticles = maxParticles;
             var emission = ps.emission;
-            emission.rateOverTime = 60f;
+            emission.rateOverTime = 0f; // 양은 Blizzard가 평소/눈보라에 따라 정한다
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(34f, 1f, 34f);
+            shape.scale = box;
             var vel = ps.velocityOverLifetime;
             vel.enabled = true;
             vel.space = ParticleSystemSimulationSpace.World;
-            vel.x = new ParticleSystem.MinMaxCurve(-0.4f, 1.2f);
-            vel.y = new ParticleSystem.MinMaxCurve(-0.6f, -0.3f);
+            vel.x = new ParticleSystem.MinMaxCurve(0.4f, 1f);
+            vel.y = new ParticleSystem.MinMaxCurve(-1.2f, -0.6f);
             vel.z = new ParticleSystem.MinMaxCurve(-0.4f, 0.4f);
             var noise = ps.noise;
             noise.enabled = true;
-            noise.strength = 0.4f;
-            noise.frequency = 0.3f;
+            noise.strength = 1f;
+            noise.frequency = 0.25f;
+            noise.scrollSpeed = 0.6f;
+            noise.octaveCount = 1;
+            noise.damping = true;
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                         new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.15f), new GradientAlphaKey(1f, 0.8f), new GradientAlphaKey(0f, 1f) });
+            col.color = new ParticleSystem.MinMaxGradient(grad);
+            var r = go.GetComponent<ParticleSystemRenderer>();
+            r.renderMode = ParticleSystemRenderMode.Billboard;
+            r.sharedMaterial = mat;
+            r.sortMode = ParticleSystemSortMode.None;
+            r.minParticleSize = 0f;
+            r.maxParticleSize = 10f;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            // 셰이더 Attributes와 순서가 맞아야 한다
+            r.SetActiveVertexStreams(new List<ParticleSystemVertexStream>
+            {
+                ParticleSystemVertexStream.Position,
+                ParticleSystemVertexStream.Color,
+                ParticleSystemVertexStream.UV,
+                ParticleSystemVertexStream.StableRandomXY,
+                ParticleSystemVertexStream.Center,
+                ParticleSystemVertexStream.SizeX,
+                ParticleSystemVertexStream.Velocity,
+            });
+            ps.Play();
+            return ps;
+        }
+
+        /// <summary>
+        /// 속도감용 눈가루: 시야 앞쪽 가까이에 공중에 멈춘 눈가루를 '이동 거리'에 비례해 뿌린다.
+        /// 서 있으면 거의 안 생기고, 빠를수록 많이 생겨 옆으로 휙휙 지나간다.
+        /// </summary>
+        static void SpeedFlakes(Transform cam)
+        {
+            var go = new GameObject("SpeedFlakes");
+            go.transform.SetParent(cam, false);
+            go.transform.localPosition = new Vector3(0f, -0.3f, 6f);
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.015f, 0.04f);
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 1500;
+            main.gravityModifier = 0.02f;
+            var emission = ps.emission;
+            emission.rateOverTime = 0f;
+            emission.rateOverDistance = 30f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(7f, 3f, 7f);
+            var col = ps.colorOverLifetime;
+            col.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                      new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.15f), new GradientAlphaKey(0.9f, 0.7f), new GradientAlphaKey(0f, 1f) });
+            col.color = g;
             var r = go.GetComponent<ParticleSystemRenderer>();
             r.sharedMaterial = s_SnowMat;
             r.shadowCastingMode = ShadowCastingMode.Off;
-            return ps;
+            ps.Play();
         }
 
         static ParticleSystem SparkSystem(Transform parent)
@@ -845,6 +969,8 @@ namespace Untrodden.EditorTools
             }).texture;
             s_SnowMat = ParticleMaterial("Snow", dot, new Color(1f, 1f, 1f, 0.9f));
             s_SparkMat = ParticleMaterial("Spark", dot, Color.white);
+            s_FlakeMat = BlizzardMaterial("SnowFlake", false);
+            s_GustMat = BlizzardMaterial("SnowGust", true);
 
             s_WoodMat = LitMaterial("Wood", new Color(0.45f, 0.3f, 0.18f));
             s_DarkMat = LitMaterial("Dark", new Color(0.15f, 0.15f, 0.17f));
