@@ -63,6 +63,7 @@ namespace Untrodden
 
         void Start()
         {
+            Time.timeScale = 1f; // 일시정지 중에 씬이 바뀌었더라도 새 씬은 정상 속도로
             if (resultScreen) resultScreen.gameObject.SetActive(false);
             SetState(GameState.Title);
 
@@ -122,8 +123,25 @@ namespace Untrodden
         }
 
         // 헤드셋을 벗었다 쓰거나 권한 팝업 같은 시스템 창이 닫히면 앱이 포커스를 다시 받는다.
-        void OnApplicationFocus(bool focus) { if (focus) RequestFaceStart("포커스 복귀"); }
+        void OnApplicationFocus(bool focus)
+        {
+            // Meta 버튼으로 시스템 메뉴를 열면 앱은 계속 돌지만 조작할 수 없다.
+            // 그동안 시간이 흐르거나 스키가 미끄러지지 않도록 게임 시간을 멈춘다.
+            // 에디터에서는 다른 창을 클릭할 때마다 멈추면 테스트가 불편하므로 기기에서만 멈춘다.
+            if (!Application.isEditor) SetFocusPause(!focus);
+            if (focus) RequestFaceStart("포커스 복귀");
+        }
         void OnApplicationPause(bool paused) { if (!paused) RequestFaceStart("일시정지 해제"); }
+
+        bool m_FocusPaused;
+
+        void SetFocusPause(bool pause)
+        {
+            if (pause == m_FocusPaused) return;
+            m_FocusPaused = pause;
+            Time.timeScale = pause ? 0f : 1f;
+            Debug.Log($"[Untrodden] {(pause ? "포커스 잃음, 게임 일시정지" : "포커스 복귀, 게임 재개")}");
+        }
 
         // ── 시작 방향 맞추기 ──
         // 출발할 때 슬로프를 보게 하는 건 StartGame(시작 버튼)이 확실히 맡는다.
@@ -193,6 +211,8 @@ namespace Untrodden
                 toGoal.y = 0f;
                 if (toGoal.magnitude < goalRadius)
                 {
+                    // 코스 복귀 등으로 건너뛴 관문은 판정이 안 난 채 남아 있으므로 누락으로 처리해 벌점을 매긴다
+                    if (CourseTracker.Instance != null) CourseTracker.Instance.ResolveRemainingAsMissed();
                     Finish(TimeLeft >= 0f);
                     return;
                 }

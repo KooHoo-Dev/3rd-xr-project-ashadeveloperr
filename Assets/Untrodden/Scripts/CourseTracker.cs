@@ -78,7 +78,18 @@ namespace Untrodden
             m_Last = p;
         }
 
-        void Resolve(SlalomGate g, bool passed)
+        /// <summary>결승선에 닿았을 때 아직 판정이 안 난 관문을 모두 누락으로 처리한다(벌점 반영).</summary>
+        public void ResolveRemainingAsMissed()
+        {
+            if (gates == null) return;
+            int before = Missed;
+            for (int k = NextIndex; k < gates.Length; k++) Resolve(gates[k], false, silent: true);
+            NextIndex = gates.Length;
+            if (Missed > before)
+                Debug.Log($"[Untrodden] 결승 시 건너뛴 관문 {Missed - before}개 누락 처리");
+        }
+
+        void Resolve(SlalomGate g, bool passed, bool silent = false)
         {
             if (g.State != SlalomGate.Result.Pending) return;
             g.SetResult(passed ? SlalomGate.Result.Passed : SlalomGate.Result.Missed);
@@ -90,7 +101,7 @@ namespace Untrodden
             else
             {
                 Missed++;
-                GameManager.Instance?.Say($"관문을 놓쳤어요! +{missPenalty:0}초");
+                if (!silent) GameManager.Instance?.Say($"관문을 놓쳤어요! +{missPenalty:0}초");
             }
             GateResolved?.Invoke(g);
         }
