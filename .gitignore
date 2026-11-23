@@ -130,3 +130,7 @@ desktop.ini
 /[Aa]ssets/UModelerX-Hub/
 /[Aa]ssets/UModelerX-Hub.meta
 /UModelerXPackages/
+
+# Synty POLYGON 애셋 (유료 라이선스·대용량, 각 PC에서 unitypackage로 임포트)
+/[Aa]ssets/Synty/
+/[Aa]ssets/Synty.meta
